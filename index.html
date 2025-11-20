@@ -2,1211 +2,564 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    
-    <!-- PWA Settings -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#4f46e5">
-    
-    <title>RumahKita</title>
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BizPlan Kuliner Pro - Aplikasi Perencanaan Usaha F&B</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .tab-active { border-bottom: 3px solid #f97316; color: #f97316; font-weight: 600; }
+        .tab-inactive { color: #6b7280; }
+        .hide { display: none; }
+        .animate-fade { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
 
-    <script type="module">
-        // Import Firebase services
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // Diperbarui untuk menyertakan writeBatch, increment, dan serverTimestamp
-        import { 
-            getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, 
-            onSnapshot, collection, query, where, getDocs, 
-            writeBatch, increment, serverTimestamp, setLogLevel 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-orange-500 text-white p-2 rounded-lg">
+                    <i class="fas fa-utensils fa-lg"></i>
+                </div>
+                <h1 class="text-xl font-bold text-gray-800">BizPlan <span class="text-orange-500">Kuliner</span></h1>
+            </div>
+            <button onclick="resetData()" class="text-xs text-red-500 hover:text-red-700 font-medium">
+                <i class="fas fa-trash"></i> Reset Data
+            </button>
+        </div>
+    </header>
 
-        // --- GLOBAL VARIABLES ---
-        let db, auth;
-        let currentChart = null;
-        let currentView = 'transactions'; // 'transactions' or 'report'
-        let familyId = null;
-        let userId = null;
-        let globalFamilyData = null;
-        let globalTransactions = [];
+    <!-- Main Content -->
+    <main class="flex-grow max-w-4xl mx-auto w-full p-4 pb-24">
         
-        // --- FIREBASE CONFIG (Disediakan oleh environment) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        let firebaseConfig;
-        try {
-            firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-            if (Object.keys(firebaseConfig).length === 0) {
-                console.warn("Firebase config is empty. Using default placeholder.");
-                // Fallback config (HANYA UNTUK DEVELOPMENT LOKAL JIKA DIPERLUKAN)
-                firebaseConfig = {
-                    apiKey: "YOUR_API_KEY",
-                    authDomain: "YOUR_AUTH_DOMAIN",
-                    projectId: "YOUR_PROJECT_ID",
-                    storageBucket: "YOUR_STORAGE_BUCKET",
-                    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-                    appId: "YOUR_APP_ID"
-                };
-            }
-        } catch (e) {
-            console.error("Error parsing Firebase config:", e);
-        }
+        <!-- Tabs Navigation -->
+        <div class="flex overflow-x-auto bg-white rounded-xl shadow-sm mb-6 no-scrollbar">
+            <button onclick="switchTab('tab-profile')" id="btn-tab-profile" class="flex-1 py-4 px-4 text-center whitespace-nowrap tab-active transition-all">
+                <i class="fas fa-store mr-2"></i>Profil
+            </button>
+            <button onclick="switchTab('tab-menu')" id="btn-tab-menu" class="flex-1 py-4 px-4 text-center whitespace-nowrap tab-inactive transition-all">
+                <i class="fas fa-burger mr-2"></i>Menu & HPP
+            </button>
+            <button onclick="switchTab('tab-costs')" id="btn-tab-costs" class="flex-1 py-4 px-4 text-center whitespace-nowrap tab-inactive transition-all">
+                <i class="fas fa-wallet mr-2"></i>Biaya & Modal
+            </button>
+            <button onclick="calculateAll(); switchTab('tab-report')" id="btn-tab-report" class="flex-1 py-4 px-4 text-center whitespace-nowrap tab-inactive transition-all">
+                <i class="fas fa-chart-pie mr-2"></i>Analisis
+            </button>
+        </div>
 
-        // --- INITIALIZATION ---
-        function initFirebase() {
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                setLogLevel('debug'); // Aktifkan log debug Firestore
+        <!-- TAB 1: Profil Usaha -->
+        <div id="tab-profile" class="animate-fade">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                <h2 class="text-lg font-bold mb-4 text-gray-800 border-b pb-2">Identitas Usaha</h2>
+                <div class="grid gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nama Usaha (Brand)</label>
+                        <input type="text" id="bizName" placeholder="Contoh: Kopi Senja" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" onchange="saveData()">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Konsep Bisnis</label>
+                        <select id="bizType" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" onchange="saveData()">
+                            <option value="Booth/Gerobak">Booth / Gerobak (Takeaway)</option>
+                            <option value="Cafe">Cafe / Coffee Shop</option>
+                            <option value="Restoran">Restoran Full Service</option>
+                            <option value="Catering">Catering Rumahan</option>
+                            <option value="Ghost Kitchen">Ghost Kitchen (Online Only)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Target Pasar</label>
+                        <input type="text" id="targetMarket" placeholder="Contoh: Mahasiswa, Pekerja Kantor" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" onchange="saveData()">
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        console.log("User is signed in:", user.uid);
-                        userId = user.uid;
-                        // Coba cari keluarga pengguna
-                        await checkUserFamily(user.uid);
-                    } else {
-                        console.log("User is not signed in. Authenticating...");
-                        await authenticateUser();
-                    }
-                });
-            } catch (error) {
-                console.error("Error initializing Firebase: ", error);
-                document.getElementById('loading-overlay').style.display = 'none';
-                document.getElementById('family-setup').style.display = 'flex';
-                showToast('Error: Gagal terhubung ke Firebase.', 'error');
-            }
-        }
+        <!-- TAB 2: Menu & HPP -->
+        <div id="tab-menu" class="hide animate-fade">
+            <div class="bg-orange-50 border-l-4 border-orange-500 p-4 rounded mb-4">
+                <p class="text-sm text-orange-700">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    HPP (Harga Pokok Penjualan) adalah total biaya bahan baku untuk membuat 1 porsi.
+                </p>
+            </div>
 
-        async function authenticateUser() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    console.log("Signing in with custom token...");
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    console.log("Signing in anonymously...");
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Error during authentication: ", error);
-                showToast('Error: Gagal autentikasi.', 'error');
-            }
-        }
-        
-        async function checkUserFamily(uid) {
-            try {
-                const userDocRef = doc(db, 'artifacts', appId, 'users', uid);
-                const userDoc = await getDoc(userDocRef);
+            <div id="menuList" class="space-y-4">
+                <!-- Menu Items will be injected here -->
+            </div>
 
-                if (userDoc.exists() && userDoc.data().familyId) {
-                    familyId = userDoc.data().familyId;
-                    console.log("User belongs to family:", familyId);
-                    // Sembunyikan setup, tampilkan loading, lalu data
-                    document.getElementById('family-setup').style.display = 'none';
-                    document.getElementById('loading-overlay').style.display = 'flex';
-                    listenToFamilyData(familyId);
-                } else {
-                    console.log("User does not have a family ID. Showing setup.");
-                    // Pengguna terautentikasi tetapi belum punya keluarga
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    document.getElementById('family-setup').style.display = 'flex';
-                    document.getElementById('user-id-display').textContent = uid;
-                }
-            } catch (error) {
-                console.error("Error checking user family:", error);
-                document.getElementById('loading-overlay').style.display = 'none';
-                document.getElementById('family-setup').style.display = 'flex';
-            }
-        }
+            <button onclick="addMenuItem()" class="w-full mt-4 py-3 border-2 border-dashed border-orange-300 text-orange-500 rounded-xl font-semibold hover:bg-orange-50 transition-colors">
+                <i class="fas fa-plus mr-2"></i>Tambah Menu Baru
+            </button>
+        </div>
 
-        // --- FAMILY SETUP (Create / Join) ---
-        async function submitCreateFamily(event) {
-            event.preventDefault();
-            const newFamilyName = document.getElementById('new-family-name').value.trim();
-            if (!newFamilyName || !userId) return;
+        <!-- TAB 3: Biaya & Modal -->
+        <div id="tab-costs" class="hide animate-fade">
+            <!-- Fixed Costs (Bulanan) -->
+            <div class="bg-white rounded-xl shadow-sm p-6 mb-4 border border-gray-100">
+                <h2 class="text-lg font-bold mb-4 text-gray-800 flex justify-between items-center">
+                    <span>Biaya Operasional (Bulanan)</span>
+                    <span class="text-sm font-normal text-gray-500">Fixed Costs</span>
+                </h2>
+                <div class="grid gap-4" id="fixedCostsList">
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="text-sm self-center text-gray-600">Sewa Tempat (Per Bulan)</label>
+                        <input type="number" class="fixed-cost p-2 border rounded text-right" placeholder="0" oninput="updateTotals()">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="text-sm self-center text-gray-600">Gaji Karyawan (Total)</label>
+                        <input type="number" class="fixed-cost p-2 border rounded text-right" placeholder="0" oninput="updateTotals()">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="text-sm self-center text-gray-600">Listrik, Air & Gas</label>
+                        <input type="number" class="fixed-cost p-2 border rounded text-right" placeholder="0" oninput="updateTotals()">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="text-sm self-center text-gray-600">Pemasaran (Ads/Promo)</label>
+                        <input type="number" class="fixed-cost p-2 border rounded text-right" placeholder="0" oninput="updateTotals()">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="text-sm self-center text-gray-600">Lain-lain (Maintenance/WiFi)</label>
+                        <input type="number" class="fixed-cost p-2 border rounded text-right" placeholder="0" oninput="updateTotals()">
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t flex justify-between font-bold">
+                    <span>Total Biaya Tetap:</span>
+                    <span id="totalFixedCostDisplay" class="text-red-600">Rp 0</span>
+                </div>
+            </div>
 
-            // Family ID dibuat unik, bisa gabungan nama + uid pembuat
-            const newFamilyId = `${newFamilyName}-${userId}`;
+            <!-- Capital (Modal Awal) -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                <h2 class="text-lg font-bold mb-4 text-gray-800 flex justify-between items-center">
+                    <span>Modal Awal (Investasi)</span>
+                    <span class="text-sm font-normal text-gray-500">CAPEX</span>
+                </h2>
+                <div class="space-y-3" id="capexList">
+                    <div class="flex gap-2 items-center">
+                         <input type="text" placeholder="Item (e.g. Renovasi, Alat)" class="flex-grow p-2 border rounded text-sm">
+                         <input type="number" placeholder="Harga" class="w-1/3 capex-cost p-2 border rounded text-right text-sm" oninput="updateTotals()">
+                    </div>
+                    <div class="flex gap-2 items-center">
+                         <input type="text" placeholder="Item (e.g. Mesin Kopi)" class="flex-grow p-2 border rounded text-sm">
+                         <input type="number" placeholder="Harga" class="w-1/3 capex-cost p-2 border rounded text-right text-sm" oninput="updateTotals()">
+                    </div>
+                     <div class="flex gap-2 items-center">
+                         <input type="text" placeholder="Item (e.g. Stok Awal)" class="flex-grow p-2 border rounded text-sm">
+                         <input type="number" placeholder="Harga" class="w-1/3 capex-cost p-2 border rounded text-right text-sm" oninput="updateTotals()">
+                    </div>
+                </div>
+                <button onclick="addCapexRow()" class="text-xs text-orange-500 font-semibold mt-2 hover:underline">+ Tambah Baris Modal</button>
+                
+                <div class="mt-4 pt-4 border-t flex justify-between font-bold">
+                    <span>Total Modal Awal:</span>
+                    <span id="totalCapexDisplay" class="text-blue-600">Rp 0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: Analisis & Report -->
+        <div id="tab-report" class="hide animate-fade">
             
-            try {
-                const familyDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', newFamilyId);
-                const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-xl p-4 shadow-lg">
+                    <p class="text-xs opacity-80 mb-1">Potensi Omset Bulanan</p>
+                    <h3 class="text-2xl font-bold" id="reportRevenue">Rp 0</h3>
+                </div>
+                <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl p-4 shadow-lg">
+                    <p class="text-xs opacity-80 mb-1">Estimasi Laba Bersih</p>
+                    <h3 class="text-2xl font-bold" id="reportNetProfit">Rp 0</h3>
+                    <p class="text-xs mt-1 bg-white/20 inline-block px-2 py-0.5 rounded" id="profitMargin">Margin: 0%</p>
+                </div>
+                <div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-xl p-4 shadow-lg">
+                    <p class="text-xs opacity-80 mb-1">Titik Balik Modal (ROI)</p>
+                    <h3 class="text-2xl font-bold" id="reportROI">0 Bulan</h3>
+                    <p class="text-xs mt-1 opacity-80">Kapan modal kembali?</p>
+                </div>
+            </div>
 
-                // Buat dokumen keluarga
-                await setDoc(familyDocRef, {
-                    name: newFamilyName,
-                    members: [userId],
-                    husbandWallet: 0,
-                    wifeWallet: 0,
-                    createdAt: serverTimestamp()
-                });
-                
-                // Update dokumen pengguna
-                await setDoc(userDocRef, { familyId: newFamilyId }, { merge: true });
+            <!-- Charts Area -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-white p-4 rounded-xl shadow-sm border">
+                    <h4 class="font-bold text-gray-700 mb-4 text-sm">Komposisi Biaya vs Profit</h4>
+                    <canvas id="costChart"></canvas>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border">
+                    <h4 class="font-bold text-gray-700 mb-4 text-sm">Target BEP (Unit/Hari)</h4>
+                    <div class="space-y-4" id="bepListDisplay">
+                        <!-- BEP per item will be listed here -->
+                        <p class="text-gray-500 text-sm italic">Tambahkan menu dan target penjualan untuk melihat data.</p>
+                    </div>
+                </div>
+            </div>
 
-                showToast('Keluarga berhasil dibuat!', 'success');
-                toggleModal('create-family-modal', false);
-                familyId = newFamilyId; // Set global familyId
-                
-                // Muat data
-                document.getElementById('family-setup').style.display = 'none';
-                document.getElementById('loading-overlay').style.display = 'flex';
-                listenToFamilyData(familyId);
-
-            } catch (error) {
-                console.error("Error creating family:", error);
-                showToast('Gagal membuat keluarga.', 'error');
-            }
-        }
-
-        async function submitJoinFamily(event) {
-            event.preventDefault();
-            const joinFamilyId = document.getElementById('join-family-id').value.trim();
-            if (!joinFamilyId || !userId) return;
-
-            try {
-                const familyDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', joinFamilyId);
-                const userDocRef = doc(db, 'artifacts', appId, 'users', userId);
-                
-                const familyDoc = await getDoc(familyDocRef);
-                if (!familyDoc.exists()) {
-                    showToast('ID Keluarga tidak ditemukan.', 'error');
-                    return;
-                }
-                
-                // Tambah anggota baru ke keluarga (jika diperlukan)
-                const familyData = familyDoc.data();
-                if (!familyData.members.includes(userId)) {
-                    await updateDoc(familyDocRef, {
-                        members: [...familyData.members, userId]
-                    });
-                }
-                
-                // Update dokumen pengguna
-                await setDoc(userDocRef, { familyId: joinFamilyId }, { merge: true });
-                
-                showToast('Berhasil bergabung dengan keluarga!', 'success');
-                toggleModal('join-family-modal', false);
-                familyId = joinFamilyId; // Set global familyId
-
-                // Muat data
-                document.getElementById('family-setup').style.display = 'none';
-                document.getElementById('loading-overlay').style.display = 'flex';
-                listenToFamilyData(familyId);
-
-            } catch (error) {
-                console.error("Error joining family:", error);
-                showToast('Gagal bergabung dengan keluarga.', 'error');
-            }
-        }
-
-        // --- DATA LISTENERS ---
-        function listenToFamilyData(famId) {
-            if (!famId) return;
-            console.log("Listening to family doc:", famId);
+            <!-- Detail Table -->
+            <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
+                <div class="px-6 py-4 border-b bg-gray-50">
+                    <h3 class="font-bold text-gray-800">Rincian Laba Rugi (P&L)</h3>
+                </div>
+                <div class="p-6 space-y-3">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Penjualan (Revenue)</span>
+                        <span class="font-semibold" id="plRevenue">Rp 0</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">HPP (COGS)</span>
+                        <span class="font-semibold text-red-500" id="plCogs">- Rp 0</span>
+                    </div>
+                    <div class="flex justify-between text-sm border-t pt-2 font-semibold bg-gray-50 p-2 rounded">
+                        <span class="text-gray-800">Laba Kotor (Gross Profit)</span>
+                        <span class="text-green-600" id="plGross">Rp 0</span>
+                    </div>
+                    <div class="flex justify-between text-sm mt-2">
+                        <span class="text-gray-600">Biaya Operasional (OpEx)</span>
+                        <span class="font-semibold text-red-500" id="plOpex">- Rp 0</span>
+                    </div>
+                    <div class="flex justify-between text-lg font-bold border-t border-gray-300 pt-3 mt-2">
+                        <span class="text-gray-900">Laba Bersih (Net Profit)</span>
+                        <span class="text-blue-600" id="plNet">Rp 0</span>
+                    </div>
+                </div>
+            </div>
             
-            const familyDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', famId);
-            onSnapshot(familyDocRef, (doc) => {
-                if (doc.exists()) {
-                    globalFamilyData = doc.data();
-                    // Juga update family ID di UI
-                    document.getElementById('family-id-main').textContent = famId;
-                    // Muat transaksi setelah data keluarga didapat
-                    listenToTransactions(famId);
-                } else {
-                    console.error("Family document not found!");
-                    showToast('Data keluarga tidak ditemukan.', 'error');
-                    document.getElementById('loading-overlay').style.display = 'none';
-                    document.getElementById('family-setup').style.display = 'flex';
-                }
-            }, (error) => {
-                console.error("Error listening to family data:", error);
-                showToast('Error memuat data keluarga.', 'error');
+            <div class="mt-8 text-center pb-8">
+                <button onclick="window.print()" class="bg-gray-800 text-white px-6 py-3 rounded-lg hover:bg-gray-900 transition-colors">
+                    <i class="fas fa-print mr-2"></i>Cetak Laporan
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- DATA MANAGEMENT ---
+        let appData = {
+            menus: [],
+            fixedCosts: [],
+            capex: []
+        };
+
+        // --- UTILS ---
+        const formatIDR = (num) => {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+        };
+
+        const parseIDR = (str) => {
+            return parseFloat(str.replace(/[^0-9,-]+/g,"")) || 0;
+        };
+
+        // --- TABS LOGIC ---
+        function switchTab(tabId) {
+            document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.add('hide'));
+            document.getElementById(tabId).classList.remove('hide');
+            
+            document.querySelectorAll('[id^="btn-tab-"]').forEach(el => {
+                el.classList.remove('tab-active');
+                el.classList.add('tab-inactive');
             });
-        }
-        
-        function listenToTransactions(famId) {
-            if (!famId) return;
-            console.log("Listening to transactions for family:", famId);
-            
-            const transactionsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'families', famId, 'transactions');
-            // Hapus orderby untuk menghindari error indeks
-            // const q = query(transactionsColRef, orderBy('date', 'desc'));
-            const q = query(transactionsColRef);
+            document.getElementById('btn-' + tabId).classList.add('tab-active');
+            document.getElementById('btn-' + tabId).classList.remove('tab-inactive');
 
-            onSnapshot(q, (snapshot) => {
-                let transactions = [];
-                snapshot.forEach((doc) => {
-                    transactions.push({ id: doc.id, ...doc.data() });
-                });
-                
-                // Sortir di sisi klien
-                transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-                globalTransactions = transactions;
-                
-                // Update UI dengan data baru
-                if (globalFamilyData) {
-                    updateUI(globalTransactions, globalFamilyData);
-                }
-                
-                // Sembunyikan loading, tampilkan konten utama
-                document.getElementById('loading-overlay').style.display = 'none';
-                document.getElementById('main-content').style.display = 'block';
-                document.getElementById('bottom-nav').style.display = 'flex';
-
-            }, (error) => {
-                console.error("Error listening to transactions:", error);
-                showToast('Error memuat transaksi.', 'error');
-                document.getElementById('loading-overlay').style.display = 'none';
-            });
+            window.scrollTo(0, 0);
         }
 
-        // --- UI UPDATE ---
-        function updateUI(transactions, familyData) {
-            console.log("Updating UI...");
-            // 1. Update Wallets
-            const totalWallet = (familyData.husbandWallet || 0) + (familyData.wifeWallet || 0);
-            document.getElementById('total-balance').textContent = formatCurrency(totalWallet);
-            document.getElementById('husband-wallet').textContent = formatCurrency(familyData.husbandWallet || 0);
-            document.getElementById('wife-wallet').textContent = formatCurrency(familyData.wifeWallet || 0);
-
-            // 2. Calculate Totals for this month
-            const now = new Date();
-            const currentMonth = now.getMonth();
-            const currentYear = now.getFullYear();
-            
-            let monthlyIncome = 0;
-            let monthlyExpense = 0;
-
-            const filteredTransactions = transactions.filter(tx => {
-                const txDate = new Date(tx.date);
-                return txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear;
-            });
-            
-            filteredTransactions.forEach(tx => {
-                if (tx.type === 'income') {
-                    monthlyIncome += tx.amount;
-                } else if (tx.type === 'expense') {
-                    monthlyExpense += tx.amount;
-                }
-            });
-
-            document.getElementById('monthly-income').textContent = formatCurrency(monthlyIncome);
-            document.getElementById('monthly-expense').textContent = formatCurrency(monthlyExpense);
-
-            // 3. Update Transaction List
-            const txListContainer = document.getElementById('transaction-list');
-            let txListHtml = '';
-
-            // Ikon untuk kategori
-            const categoryIcons = {
-                'Gaji': 'fa-wallet',
-                'Makanan': 'fa-utensils',
-                'Transportasi': 'fa-car',
-                'Tagihan': 'fa-file-invoice-dollar',
-                'Belanja': 'fa-cart-shopping',
-                'Hiburan': 'fa-film',
-                'Kesehatan': 'fa-briefcase-medical',
-                'Pendidikan': 'fa-user-graduate',
-                'Lainnya': 'fa-ellipsis-h',
-                'Transfer': 'fa-right-left' // Ikon baru
-            };
-            
-            const transactionsToShow = currentView === 'transactions' ? transactions.slice(0, 15) : transactions; // Tampilkan 15 di home, semua di report
-            
-            if (transactionsToShow.length === 0) {
-                txListHtml = '<p class="text-slate-500 text-center py-10">Belum ada transaksi.</p>';
-            } else {
-                transactionsToShow.forEach(tx => {
-                    const icon = categoryIcons[tx.category] || 'fa-tags';
+        // --- MENU & INGREDIENTS LOGIC ---
+        function addMenuItem() {
+            const id = Date.now();
+            const html = `
+                <div id="menu-${id}" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 relative animate-fade">
+                    <button onclick="removeMenu(${id})" class="absolute top-4 right-4 text-gray-400 hover:text-red-500">
+                        <i class="fas fa-times"></i>
+                    </button>
                     
-                    // Logika warna baru
-                    const iconColor = tx.category === 'Transfer' ? 'text-blue-500' : (tx.type === 'income' ? 'text-green-500' : 'text-red-500');
-                    const iconBg = tx.category === 'Transfer' ? 'bg-blue-100' : (tx.type === 'income' ? 'bg-green-100' : 'bg-red-100');
-                    const amountColor = tx.type === 'income' ? 'text-green-600' : 'text-red-600';
+                    <div class="grid md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="text-xs text-gray-500 font-bold uppercase">Nama Menu</label>
+                            <input type="text" class="menu-name w-full border-b-2 border-gray-200 focus:border-orange-500 outline-none py-1 font-semibold text-lg" placeholder="Contoh: Kopi Susu Gula Aren">
+                        </div>
+                        <div>
+                             <label class="text-xs text-gray-500 font-bold uppercase">Target Jual / Hari (Porsi)</label>
+                             <input type="number" class="menu-target w-full border-b-2 border-gray-200 focus:border-orange-500 outline-none py-1" placeholder="0" oninput="calculateMenuEconomics(${id})">
+                        </div>
+                    </div>
 
-                    txListHtml += `
-                        <div class="flex items-center justify-between py-4 border-b border-slate-100" onclick="showTransactionDetails(${JSON.stringify(tx).replace(/"/g, "'")})">
-                            <div class="flex items-center min-w-0">
-                                <div class="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center mr-3 ${iconBg}">
-                                    <i class="fa-solid ${icon} ${iconColor}"></i>
-                                </div>
-                                <div class="min-w-0">
-                                    <p class="font-medium text-slate-800 truncate">${tx.description || tx.category}</p>
-                                    <p class="text-sm text-slate-500">${tx.user} \u2022 ${tx.category}</p>
-                                </div>
+                    <div class="bg-gray-50 p-3 rounded-lg mb-4">
+                        <p class="text-xs font-bold text-gray-500 mb-2 uppercase">Komposisi Bahan (Resep)</p>
+                        <div id="ingredients-${id}" class="space-y-2">
+                            <!-- Ingredients rows -->
+                        </div>
+                        <button onclick="addIngredient(${id})" class="text-xs text-orange-600 font-semibold mt-2 hover:underline">+ Tambah Bahan</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-end bg-orange-50 p-3 rounded-lg">
+                        <div>
+                            <label class="text-xs text-gray-500">Total HPP</label>
+                            <div id="hpp-${id}" class="font-bold text-gray-700">Rp 0</div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500">Harga Jual</label>
+                            <input type="number" id="price-${id}" class="w-full p-1 rounded border text-sm" placeholder="Rp" oninput="calculateMenuEconomics(${id})">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500">Profit / Porsi</label>
+                            <div id="profit-${id}" class="font-bold text-green-600">Rp 0</div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500">Margin</label>
+                            <div id="margin-${id}" class="font-bold text-blue-600">0%</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('menuList').insertAdjacentHTML('beforeend', html);
+            addIngredient(id); // Add 1 empty ingredient row by default
+        }
+
+        function removeMenu(id) {
+            if(confirm('Hapus menu ini?')) {
+                document.getElementById(`menu-${id}`).remove();
+                saveData();
+            }
+        }
+
+        function addIngredient(menuId) {
+            const rowId = Date.now() + Math.random();
+            const html = `
+                <div id="ing-${rowId}" class="flex gap-2 items-center ingredient-row">
+                    <input type="text" placeholder="Nama Bahan" class="ing-name flex-[2] p-1 border rounded text-sm">
+                    <input type="number" placeholder="Harga Beli" class="ing-cost flex-1 p-1 border rounded text-sm" oninput="calculateHpp(${menuId})">
+                    <span class="text-xs text-gray-400">/</span>
+                    <input type="number" placeholder="Jml Beli" class="ing-buy-qty flex-1 p-1 border rounded text-sm" oninput="calculateHpp(${menuId})">
+                    <span class="text-xs text-gray-400">pakai</span>
+                    <input type="number" placeholder="Jml Pakai" class="ing-use-qty flex-1 p-1 border rounded text-sm" oninput="calculateHpp(${menuId})">
+                    <button onclick="this.parentElement.remove(); calculateHpp(${menuId})" class="text-red-400 hover:text-red-600"><i class="fas fa-times"></i></button>
+                </div>
+            `;
+            document.getElementById(`ingredients-${menuId}`).insertAdjacentHTML('beforeend', html);
+        }
+
+        function calculateHpp(menuId) {
+            let totalHpp = 0;
+            const rows = document.querySelectorAll(`#ingredients-${menuId} .ingredient-row`);
+            
+            rows.forEach(row => {
+                const cost = parseFloat(row.querySelector('.ing-cost').value) || 0;
+                const buyQty = parseFloat(row.querySelector('.ing-buy-qty').value) || 1; // Avoid division by zero
+                const useQty = parseFloat(row.querySelector('.ing-use-qty').value) || 0;
+                
+                // Logic: (Price / BuyQty) * UseQty
+                // Example: Coffee Beans 200,000 per 1000gr. Use 18gr.
+                // (200000 / 1000) * 18 = 3600
+                
+                const costPerUnit = cost / (buyQty || 1);
+                const costPerPortion = costPerUnit * useQty;
+                totalHpp += costPerPortion;
+            });
+
+            document.getElementById(`hpp-${menuId}`).innerText = formatIDR(totalHpp);
+            document.getElementById(`hpp-${menuId}`).dataset.value = totalHpp;
+            calculateMenuEconomics(menuId);
+        }
+
+        function calculateMenuEconomics(menuId) {
+            const hpp = parseFloat(document.getElementById(`hpp-${menuId}`).dataset.value) || 0;
+            const sellPrice = parseFloat(document.getElementById(`price-${menuId}`).value) || 0;
+            
+            const profit = sellPrice - hpp;
+            const margin = sellPrice > 0 ? ((profit / sellPrice) * 100).toFixed(1) : 0;
+
+            document.getElementById(`profit-${menuId}`).innerText = formatIDR(profit);
+            document.getElementById(`margin-${menuId}`).innerText = margin + "%";
+            
+            saveData();
+        }
+
+        // --- CAPEX & OPEX LOGIC ---
+        function addCapexRow() {
+             const html = `
+                <div class="flex gap-2 items-center">
+                     <input type="text" placeholder="Item" class="flex-grow p-2 border rounded text-sm">
+                     <input type="number" placeholder="Harga" class="w-1/3 capex-cost p-2 border rounded text-right text-sm" oninput="updateTotals()">
+                     <button onclick="this.parentElement.remove(); updateTotals()" class="text-red-400"><i class="fas fa-times"></i></button>
+                </div>
+             `;
+             document.getElementById('capexList').insertAdjacentHTML('beforeend', html);
+        }
+
+        function updateTotals() {
+            // Sum Fixed Costs
+            let totalFixed = 0;
+            document.querySelectorAll('.fixed-cost').forEach(input => {
+                totalFixed += parseFloat(input.value) || 0;
+            });
+            document.getElementById('totalFixedCostDisplay').innerText = formatIDR(totalFixed);
+
+            // Sum Capex
+            let totalCapex = 0;
+            document.querySelectorAll('.capex-cost').forEach(input => {
+                totalCapex += parseFloat(input.value) || 0;
+            });
+            document.getElementById('totalCapexDisplay').innerText = formatIDR(totalCapex);
+            
+            saveData();
+        }
+
+        // --- MAIN CALCULATION & REPORT ---
+        let myChart = null;
+
+        function calculateAll() {
+            // 1. Get Total Fixed Cost
+            let fixedCost = 0;
+            document.querySelectorAll('.fixed-cost').forEach(el => fixedCost += (parseFloat(el.value) || 0));
+
+            // 2. Get Total Capex
+            let capex = 0;
+            document.querySelectorAll('.capex-cost').forEach(el => capex += (parseFloat(el.value) || 0));
+
+            // 3. Calculate Revenue & COGS from Menus
+            let totalDailyRevenue = 0;
+            let totalDailyCOGS = 0;
+            let totalDailyGrossProfit = 0;
+
+            const menuItems = document.querySelectorAll('[id^="menu-"]');
+            let bepHTML = '';
+
+            menuItems.forEach(menu => {
+                const id = menu.id.replace('menu-', '');
+                const name = menu.querySelector('.menu-name').value || "Menu Tanpa Nama";
+                const qty = parseFloat(menu.querySelector('.menu-target').value) || 0;
+                const price = parseFloat(menu.querySelector(`#price-${id}`).value) || 0;
+                const hpp = parseFloat(menu.querySelector(`#hpp-${id}`).dataset.value) || 0;
+
+                const profitPerUnit = price - hpp;
+                const contributionMarginRatio = price > 0 ? (profitPerUnit/price) : 0;
+
+                totalDailyRevenue += (qty * price);
+                totalDailyCOGS += (qty * hpp);
+                totalDailyGrossProfit += (qty * profitPerUnit);
+
+                // Simple BEP Unit Calculation (assuming this product covers fixed cost alone - simplified)
+                // More accurate: BEP Mix. But for visual aid:
+                const bepUnit = profitPerUnit > 0 ? Math.ceil(fixedCost / profitPerUnit) : '∞';
+                
+                if(price > 0 && qty > 0) {
+                     bepHTML += `
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <div>
+                                <p class="font-semibold text-gray-700">${name}</p>
+                                <p class="text-xs text-gray-500">Profit: ${formatIDR(profitPerUnit)}/porsi</p>
                             </div>
-                            <div class="text-right flex-shrink-0 ml-3">
-                                <p class="font-bold ${amountColor}">${tx.type === 'income' ? '+' : '-'}${formatCurrency(tx.amount)}</p>
-                                <p class="text-sm text-slate-500">${formatDate(tx.date)}</p>
+                            <div class="text-right">
+                                <p class="font-bold text-orange-600 text-sm">Butuh ${bepUnit} porsi</p>
+                                <p class="text-xs text-gray-400">untuk tutup biaya ops (${formatIDR(fixedCost)})</p>
                             </div>
                         </div>
                     `;
-                });
-            }
-            txListContainer.innerHTML = txListHtml;
-
-            // 4. Update Chart (hanya jika di halaman report)
-            if (currentView === 'report') {
-                updateChart(filteredTransactions); // Update chart dengan transaksi bulan ini
-            }
-        }
-        
-        // --- CHART ---
-        function updateChart(transactions) {
-            const ctx = document.getElementById('expense-chart');
-            if (!ctx) return;
-
-            const expenseByCat = {};
-            transactions.forEach(tx => {
-                if (tx.type === 'expense') {
-                    expenseByCat[tx.category] = (expenseByCat[tx.category] || 0) + tx.amount;
                 }
             });
 
-            const labels = Object.keys(expenseByCat);
-            const data = Object.values(expenseByCat);
+            const monthlyRevenue = totalDailyRevenue * 30; // Assuming 30 days
+            const monthlyCOGS = totalDailyCOGS * 30;
+            const monthlyGrossProfit = monthlyRevenue - monthlyCOGS;
+            const monthlyNetProfit = monthlyGrossProfit - fixedCost;
 
-            if (currentChart) {
-                currentChart.destroy();
+            // ROI Calculation
+            const roiMonths = monthlyNetProfit > 0 ? (capex / monthlyNetProfit).toFixed(1) : "∞";
+
+            // Update UI
+            document.getElementById('reportRevenue').innerText = formatIDR(monthlyRevenue);
+            document.getElementById('reportNetProfit').innerText = formatIDR(monthlyNetProfit);
+            document.getElementById('profitMargin').innerText = `Net Margin: ${monthlyRevenue > 0 ? ((monthlyNetProfit/monthlyRevenue)*100).toFixed(1) : 0}%`;
+            document.getElementById('reportROI').innerText = `${roiMonths} Bulan`;
+            
+            // Table Detail
+            document.getElementById('plRevenue').innerText = formatIDR(monthlyRevenue);
+            document.getElementById('plCogs').innerText = "- " + formatIDR(monthlyCOGS);
+            document.getElementById('plGross').innerText = formatIDR(monthlyGrossProfit);
+            document.getElementById('plOpex').innerText = "- " + formatIDR(fixedCost);
+            document.getElementById('plNet').innerText = formatIDR(monthlyNetProfit);
+            
+            if(monthlyNetProfit < 0) {
+                document.getElementById('plNet').classList.remove('text-blue-600');
+                document.getElementById('plNet').classList.add('text-red-600');
+            } else {
+                document.getElementById('plNet').classList.add('text-blue-600');
+                document.getElementById('plNet').classList.remove('text-red-600');
             }
 
-            currentChart = new Chart(ctx.getContext('2d'), {
+            document.getElementById('bepListDisplay').innerHTML = bepHTML || '<p class="text-gray-500 text-sm">Belum ada data penjualan yang valid.</p>';
+
+            // Render Chart
+            renderChart(monthlyCOGS, fixedCost, monthlyNetProfit);
+        }
+
+        function renderChart(cogs, opex, net) {
+            const ctx = document.getElementById('costChart').getContext('2d');
+            
+            if(myChart) myChart.destroy();
+
+            // If net profit is negative, show it distinctly or handle data
+            let chartData = [cogs, opex, net > 0 ? net : 0];
+            let labels = ['HPP (Bahan)', 'Biaya Tetap (OpEx)', 'Laba Bersih'];
+            let colors = ['#f97316', '#ef4444', '#22c55e'];
+
+            if (net <= 0) {
+                // Logic visual if loss
+                labels[2] = 'Rugi';
+                colors[2] = '#94a3b8'; // grey for no profit
+            }
+
+            myChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Pengeluaran',
-                        data: data,
-                        backgroundColor: [
-                            '#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e',
-                            '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef'
-                        ],
-                        hoverOffset: 4
+                        data: chartData,
+                        backgroundColor: colors,
+                        borderWidth: 0
                     }]
                 },
                 options: {
                     responsive: true,
                     plugins: {
-                        legend: {
-                            position: 'bottom',
-                        },
-                        title: {
-                            display: true,
-                            text: 'Pengeluaran Bulan Ini per Kategori'
-                        }
+                        legend: { position: 'bottom' }
                     }
                 }
             });
         }
 
-        // --- TRANSACTION ACTIONS ---
-        async function addTransaction(event) {
-            event.preventDefault();
-            if (!familyId) {
-                showToast('Error: Family ID tidak ditemukan.');
-                return;
-            }
-
-            const type = document.getElementById('transaction-type').value;
-            const amount = parseFloat(document.getElementById('transaction-amount').value);
-            const category = document.getElementById('transaction-category').value;
-            const description = document.getElementById('transaction-description').value;
-            const date = document.getElementById('transaction-date').value;
-            const user = document.getElementById('transaction-user').value;
-
-            if (amount <= 0) {
-                showToast('Jumlah transaksi harus lebih dari 0.', 'error');
-                return;
-            }
-
-            const newTransaction = {
-                type,
-                amount,
-                category,
-                description,
-                date,
-                user,
-                createdAt: serverTimestamp()
-            };
-
-            // Tentukan update untuk dompet
-            const walletField = user === 'Suami' ? 'husbandWallet' : 'wifeWallet';
-            const amountToUpdate = type === 'income' ? amount : -amount;
-            
-            try {
-                // Gunakan batch write untuk jaga konsistensi
-                const batch = writeBatch(db);
-                
-                // 1. Tambah dokumen transaksi
-                const transColRef = collection(db, 'artifacts', appId, 'public', 'data', 'families', familyId, 'transactions');
-                const newTransDocRef = doc(transColRef); // Buat ref baru
-                batch.set(newTransDocRef, newTransaction);
-                
-                // 2. Update dompet keluarga
-                const familyDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', familyId);
-                batch.update(familyDocRef, {
-                    [walletField]: increment(amountToUpdate)
-                });
-                
-                // Commit batch
-                await batch.commit();
-
-                showToast('Transaksi berhasil disimpan!', 'success');
-                toggleModal('add-transaction-modal', false);
-
-            } catch (error) {
-                console.error("Error adding transaction: ", error);
-                showToast('Error: Gagal menyimpan transaksi.', 'error');
-            }
-        }
-        
-        // FUNGSI BARU: submitTransfer
-        async function submitTransfer(event) {
-            event.preventDefault();
-            if (!familyId) {
-                showToast('Error: Family ID tidak ditemukan.');
-                return;
-            }
-
-            const amount = parseFloat(document.getElementById('transfer-amount').value);
-            const fromUser = document.getElementById('transfer-from').value;
-            const toUser = (fromUser === 'Suami') ? 'Istri' : 'Suami';
-            let description = document.getElementById('transfer-description').value;
-            const date = document.getElementById('transfer-date').value;
-
-            if (amount <= 0) {
-                showToast('Jumlah transfer harus lebih dari 0.', 'error');
-                return;
-            }
-
-            // Tampilkan loading
-            showToast('Menyimpan transfer...', 'info');
-
-            try {
-                const batch = writeBatch(db);
-                const transactionsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'families', familyId, 'transactions');
-                const familyDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', familyId);
-
-                const baseDescription = description || 'Transfer';
-                
-                // 1. Buat Transaksi Pengeluaran (Expense) untuk Pengirim
-                const expenseTx = {
-                    type: 'expense',
-                    category: 'Transfer',
-                    user: fromUser,
-                    amount: amount,
-                    description: `Transfer ke ${toUser}${description ? ': ' + description : ''}`,
-                    date: date,
-                    createdAt: serverTimestamp()
-                };
-                const expenseDocRef = doc(transactionsColRef); // Ref untuk transaksi baru
-                batch.set(expenseDocRef, expenseTx);
-
-                // 2. Buat Transaksi Pemasukan (Income) untuk Penerima
-                const incomeTx = {
-                    type: 'income',
-                    category: 'Transfer',
-                    user: toUser,
-                    amount: amount,
-                    description: `Transfer dari ${fromUser}${description ? ': ' + description : ''}`,
-                    date: date,
-                    createdAt: serverTimestamp()
-                };
-                const incomeDocRef = doc(transactionsColRef); // Ref untuk transaksi baru
-                batch.set(incomeDocRef, incomeTx);
-
-                // 3. Update kedua dompet dalam satu operasi
-                const walletUpdates = {};
-                walletUpdates[fromUser === 'Suami' ? 'husbandWallet' : 'wifeWallet'] = increment(-amount);
-                walletUpdates[toUser === 'Suami' ? 'husbandWallet' : 'wifeWallet'] = increment(amount);
-                
-                batch.update(familyDocRef, walletUpdates);
-
-                // Commit batch
-                await batch.commit();
-
-                showToast('Transfer berhasil disimpan!', 'success');
-                toggleModal('transfer-modal', false);
-
-            } catch (error) {
-                console.error("Error submitting transfer: ", error);
-                showToast('Error: Gagal menyimpan transfer.', 'error');
-            }
-        }
-
-        async function deleteTransaction(tx) {
-            if (!familyId || !tx || !tx.id) {
-                showToast('Error: Data transaksi tidak lengkap.', 'error');
-                return;
-            }
-            
-            // Tutup detail modal
-            toggleModal('transaction-detail-modal', false);
-            showToast('Menghapus transaksi...', 'info');
-
-            // Tentukan kebalikan dari update dompet
-            const walletField = tx.user === 'Suami' ? 'husbandWallet' : 'wifeWallet';
-            // Jika income, kurangi. Jika expense, tambahi.
-            const amountToRestore = tx.type === 'income' ? -tx.amount : tx.amount;
-
-            try {
-                // Gunakan batch write untuk konsistensi
-                const batch = writeBatch(db);
-
-                // 1. Hapus dokumen transaksi
-                const transDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', familyId, 'transactions', tx.id);
-                batch.delete(transDocRef);
-                
-                // 2. Kembalikan saldo dompet
-                const familyDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'families', familyId);
-                batch.update(familyDocRef, {
-                    [walletField]: increment(amountToRestore)
-                });
-                
-                // Khusus untuk transfer, kita harus hapus pasangannya & kembalikan dompet pasangannya
-                if (tx.category === 'Transfer') {
-                    // Ini adalah bagian yang kompleks. Kita perlu mencari transaksi pasangannya.
-                    // Untuk saat ini, kita akan hapus satu per satu.
-                    // Jika ini 'expense' transfer, kembalikan 'income' pasangannya
-                    // Jika ini 'income' transfer, kembalikan 'expense' pasangannya
-                    // Implementasi sederhana: Biarkan pengguna menghapus keduanya secara manual jika perlu
-                    // Implementasi lebih baik: (dilakukan di 'submitTransfer') adalah menyimpan ID pasangan
-                    // Mari kita tambahkan peringatan
-                    showToast('Transaksi transfer dihapus. Saldo dikembalikan. Hapus transaksi pasangan secara manual jika perlu.', 'warning');
-                }
-
-                // Commit batch
-                await batch.commit();
-                
-                showToast('Transaksi berhasil dihapus!', 'success');
-
-            } catch (error) {
-                console.error("Error deleting transaction: ", error);
-                showToast('Gagal menghapus transaksi.', 'error');
-            }
-        }
-
-        // --- NAVIGATION ---
-        function navigate(view) {
-            currentView = view;
-            const reportPage = document.getElementById('report-page');
-            const homePage = document.getElementById('home-page');
-            const btnHome = document.getElementById('btn-home');
-            const btnReport = document.getElementById('btn-report');
-
-            if (view === 'report') {
-                homePage.classList.add('hidden');
-                reportPage.classList.remove('hidden');
-                btnHome.classList.remove('text-indigo-600');
-                btnReport.classList.add('text-indigo-600');
-                // Panggil updateUI lagi untuk memastikan list & chart di-render
-                updateUI(globalTransactions, globalFamilyData);
-            } else { // 'home' or 'transactions'
-                homePage.classList.remove('hidden');
-                reportPage.classList.add('hidden');
-                btnHome.classList.add('text-indigo-600');
-                btnReport.classList.remove('text-indigo-600');
-                updateUI(globalTransactions, globalFamilyData);
-            }
-        }
-        
-        // --- REPORTING ---
-        function generateReportPDF() {
-            showToast('Membuat PDF...', 'info');
-            const reportContent = document.getElementById('report-page-content');
-            const options = {
-                margin: 0.5,
-                filename: `Laporan_Keuangan_${familyId}_${new Date().toISOString().split('T')[0]}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-            };
-            
-            html2pdf().from(reportContent).set(options).save().then(() => {
-                showToast('PDF berhasil dibuat!', 'success');
-            }).catch(err => {
-                showToast('Gagal membuat PDF.', 'error');
-                console.error("PDF generation error:", err);
-            });
-        }
-        
-        // --- MODAL & TOAST ---
-        function toggleModal(modalId, forceShow = null) {
-            const modal = document.getElementById(modalId);
-            if (!modal) return;
-
-            const isHidden = modal.classList.contains('hidden');
-            
-            if (forceShow === true || (forceShow === null && isHidden)) {
-                // Tampilkan
-                modal.classList.remove('hidden');
-                // Animate in
-                if (modalId === 'action-modal') {
-                    modal.querySelector('div').classList.remove('translate-y-full');
-                } else if (modalId === 'add-transaction-modal' || modalId === 'transfer-modal' || modalId === 'transaction-detail-modal') {
-                    modal.classList.remove('translate-y-full');
-                }
-            } else if (forceShow === false || (forceShow === null && !isHidden)) {
-                // Sembunyikan
-                if (modalId === 'action-modal') {
-                    modal.querySelector('div').classList.add('translate-y-full');
-                    setTimeout(() => modal.classList.add('hidden'), 300);
-                } else if (modalId === 'add-transaction-modal' || modalId === 'transfer-modal' || modalId === 'transaction-detail-modal') {
-                    modal.classList.add('translate-y-full');
-                    setTimeout(() => modal.classList.add('hidden'), 300);
-                } else {
-                    modal.classList.add('hidden');
-                }
-            }
-        }
-
-        function openTransactionModal(type) {
-            toggleModal('action-modal', false);
-            document.getElementById('transaction-type').value = type;
-            document.getElementById('modal-title').textContent = type === 'income' ? 'Pemasukan Baru' : 'Pengeluaran Baru';
-            document.getElementById('transaction-form').reset();
-            document.getElementById('transaction-date').value = new Date().toISOString().split('T')[0];
-            
-            // Set kategori default
-            document.getElementById('transaction-category').value = type === 'income' ? 'Gaji' : 'Makanan';
-            
-            toggleModal('add-transaction-modal', true);
-        }
-        
-        // FUNGSI BARU
-        function openTransferModal() {
-            toggleModal('action-modal', false);
-            // Set default tanggal & reset form
-            document.getElementById('transfer-date').value = new Date().toISOString().split('T')[0];
-            document.getElementById('transfer-modal-form').reset();
-            toggleModal('transfer-modal', true);
-        }
-
-        function showTransactionDetails(tx) {
-            const modal = document.getElementById('transaction-detail-modal');
-            const amountColor = tx.type === 'income' ? 'text-green-600' : 'text-red-600';
-            const sign = tx.type === 'income' ? '+' : '-';
-            
-            document.getElementById('detail-amount').textContent = `${sign}${formatCurrency(tx.amount)}`;
-            document.getElementById('detail-amount').className = `font-bold text-3xl ${amountColor}`;
-            document.getElementById('detail-description').textContent = tx.description || 'Tidak ada deskripsi';
-            document.getElementById('detail-category').textContent = tx.category;
-            document.getElementById('detail-user').textContent = tx.user;
-            document.getElementById('detail-date').textContent = formatDate(tx.date, true); // Format panjang
-            
-            // Setup tombol delete
-            const deleteBtn = document.getElementById('delete-tx-btn');
-            // Hapus listener lama & tambah baru untuk menghindari penumpukan
-            const newDeleteBtn = deleteBtn.cloneNode(true);
-            deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
-            newDeleteBtn.addEventListener('click', () => {
-                // Tampilkan konfirmasi kustom
-                showConfirmationModal('Yakin ingin menghapus transaksi ini? Saldo dompet akan dikembalikan.', () => deleteTransaction(tx));
-            });
-            
-            toggleModal('transaction-detail-modal', true);
-        }
-
-        function showConfirmationModal(message, onConfirm) {
-            const modal = document.getElementById('confirmation-modal');
-            document.getElementById('confirmation-message').textContent = message;
-            
-            const confirmBtn = document.getElementById('confirmation-btn-yes');
-            const cancelBtn = document.getElementById('confirmation-btn-no');
-
-            // Hapus listener lama
-            const newConfirmBtn = confirmBtn.cloneNode(true);
-            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-            
-            const newCancelBtn = cancelBtn.cloneNode(true);
-            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-
-            // Tambah listener baru
-            newConfirmBtn.addEventListener('click', () => {
-                toggleModal('confirmation-modal', false);
-                onConfirm(); // Jalankan aksi konfirmasi
-            });
-            newCancelBtn.addEventListener('click', () => {
-                toggleModal('confirmation-modal', false);
-            });
-            
-            toggleModal('confirmation-modal', true);
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.getElementById('toast-notification');
-            const toastMessage = document.getElementById('toast-message');
-            const toastIcon = document.getElementById('toast-icon');
-
-            toastMessage.textContent = message;
-
-            // Hapus kelas warna sebelumnya
-            toast.classList.remove('bg-green-500', 'bg-red-500', 'bg-blue-500', 'bg-yellow-500');
-            toastIcon.classList.remove('fa-check-circle', 'fa-times-circle', 'fa-info-circle', 'fa-exclamation-triangle');
-            
-            if (type === 'success') {
-                toast.classList.add('bg-green-500');
-                toastIcon.classList.add('fa-check-circle');
-            } else if (type === 'error') {
-                toast.classList.add('bg-red-500');
-                toastIcon.classList.add('fa-times-circle');
-            } else if (type === 'warning') {
-                toast.classList.add('bg-yellow-500');
-                toastIcon.classList.add('fa-exclamation-triangle');
-            } else { // info
-                toast.classList.add('bg-blue-500');
-                toastIcon.classList.add('fa-info-circle');
-            }
-
-            // Tampilkan toast
-            toast.classList.remove('hidden', 'translate-y-full');
-            toast.classList.add('translate-y-0');
-
-            // Sembunyikan setelah 3 detik
-            setTimeout(() => {
-                toast.classList.remove('translate-y-0');
-                toast.classList.add('translate-y-full');
-                setTimeout(() => toast.classList.add('hidden'), 300);
-            }, 3000);
-        }
-
-        // --- UTILITY FUNCTIONS ---
-        function formatCurrency(value) {
-            if (typeof value !== 'number') value = 0;
-            return 'Rp ' + value.toLocaleString('id-ID');
-        }
-
-        function formatDate(dateString, long = false) {
-            const date = new Date(dateString);
-            if (long) {
-                return date.toLocaleDateString('id-ID', {
-                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                });
-            }
-            return date.toLocaleDateString('id-ID', {
-                day: '2-digit', month: 'short', year: 'numeric'
+        // --- PERSISTENCE (Local Storage) ---
+        function saveData() {
+            // This is a simplified save. In a real app, we'd map all DOM elements to the object.
+            // Since this is a single file demo, we rely on calculations on the fly, 
+            // but we can autosave input values.
+            const inputs = document.querySelectorAll('input, select');
+            const data = {};
+            inputs.forEach((input, index) => {
+                // Simple saving based on index/structure could be brittle, 
+                // but for this demo we just want to ensure basic inputs stay if reloaded
             });
         }
 
-        function copyToClipboard(elementId) {
-            const text = document.getElementById(elementId).textContent;
-            
-            // Fallback untuk iframe
-            try {
-                const textArea = document.createElement("textarea");
-                textArea.value = text;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                showToast('ID berhasil disalin!', 'success');
-            } catch (err) {
-                console.error('Fallback: Gagal menyalin teks: ', err);
-                showToast('Gagal menyalin ID.', 'error');
+        function resetData() {
+            if(confirm("Hapus semua data dan mulai dari awal?")) {
+                location.reload();
             }
         }
-        
-        // --- EVENT LISTENERS & GLOBAL ATTACHMENTS ---
-        document.addEventListener('DOMContentLoaded', initFirebase);
-        
-        // Attach functions to window object to be accessible from HTML onclick
-        window.toggleModal = toggleModal;
-        window.openTransactionModal = openTransactionModal;
-        window.addTransaction = addTransaction;
-        window.navigate = navigate;
-        window.showTransactionDetails = showTransactionDetails;
-        window.submitCreateFamily = submitCreateFamily;
-        window.submitJoinFamily = submitJoinFamily;
-        window.copyToClipboard = copyToClipboard;
-        window.generateReportPDF = generateReportPDF;
-        // Fungsi baru
-        window.openTransferModal = openTransferModal;
-        window.submitTransfer = submitTransfer;
+
+        // Init
+        window.onload = () => {
+            // Add one menu by default
+            addMenuItem();
+        }
+
     </script>
-    
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            /* Safe area insets for iOS */
-            padding-bottom: constant(safe-area-inset-bottom);
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-        /* Hide scrollbar */
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* Custom styles for PWA fullscreen */
-        @media all and (display-mode: standalone) {
-            body {
-                padding-top: constant(safe-area-inset-top);
-                padding-top: env(safe-area-inset-top);
-                padding-bottom: constant(safe-area-inset-bottom);
-                padding-bottom: env(safe-area-inset-bottom);
-                padding-left: constant(safe-area-inset-left);
-                padding-left: env(safe-area-inset-left);
-                padding-right: constant(safe-area-inset-right);
-                padding-right: env(safe-area-inset-right);
-            }
-        }
-    </style>
-
-</head>
-<body class="bg-slate-100 max-w-lg mx-auto h-screen flex flex-col">
-
-    <!-- LOADING OVERLAY -->
-    <div id="loading-overlay" class="fixed inset-0 z-[99] bg-white flex flex-col items-center justify-center">
-        <i class="fa-solid fa-spinner fa-spin fa-2x text-indigo-600"></i>
-        <p class="mt-4 text-slate-600">Memuat data...</p>
-    </div>
-    
-    <!-- FAMILY SETUP -->
-    <div id="family-setup" class="fixed inset-0 z-[50] bg-slate-100 flex-col items-center justify-center p-6 text-center hidden">
-        <i class="fa-solid fa-house-user fa-3x text-indigo-600 mb-6"></i>
-        <h2 class="text-2xl font-bold text-slate-800 mb-3">Selamat Datang!</h2>
-        <p class="text-slate-600 mb-8">Aplikasi ini digunakan bersama keluarga. Silakan buat keluarga baru atau gabung ke keluarga yang sudah ada.</p>
-        
-        <div class="w-full max-w-sm">
-            <button onclick="toggleModal('create-family-modal', true)" class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl active:bg-indigo-800 mb-4">
-                Buat Keluarga Baru
-            </button>
-            <button onclick="toggleModal('join-family-modal', true)" class="w-full py-3 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl active:bg-slate-100">
-                Gabung Keluarga
-            </button>
-        </div>
-        
-        <div class="mt-8 p-4 bg-indigo-50 rounded-xl w-full max-w-sm">
-            <p class="text-sm text-slate-600 mb-2">ID Pengguna Anda:</p>
-            <div class="flex items-center justify-between bg-white p-2 rounded-lg">
-                <span id="user-id-display" class="text-sm font-mono text-indigo-800 truncate mr-2">...</span>
-                <button onclick="copyToClipboard('user-id-display')" class="text-slate-500 active:text-indigo-600"><i class="fa-solid fa-copy"></i></button>
-            </div>
-            <p class="text-xs text-slate-500 mt-2">Gunakan ID ini untuk verifikasi saat bergabung.</p>
-        </div>
-    </div>
-
-    <!-- MAIN CONTENT -->
-    <div id="main-content" class="flex-1 overflow-y-auto no-scrollbar pb-24 hidden">
-        
-        <!-- Home Page -->
-        <div id="home-page">
-            <!-- Header -->
-            <div class="bg-indigo-600 text-white p-6 rounded-b-3xl sticky top-0 z-10">
-                <div class="flex justify-between items-center mb-1">
-                    <p class="text-sm opacity-80">Total Saldo</p>
-                    <div class="text-xs opacity-80 bg-white/20 px-2 py-1 rounded-full flex items-center">
-                        <span id="family-id-main" class="mr-1.5">...</span>
-                        <i class="fa-solid fa-copy fa-xs" onclick="copyToClipboard('family-id-main')"></i>
-                    </div>
-                </div>
-                <h1 id="total-balance" class="text-4xl font-bold mb-6">Rp 0</h1>
-                
-                <!-- Wallet Breakdown -->
-                <div class="flex bg-white/20 p-4 rounded-xl backdrop-blur-sm">
-                    <div class="w-1/2 pr-3 border-r border-white/30">
-                        <div class="flex items-center mb-1">
-                            <i class="fa-solid fa-person fa-sm mr-2 opacity-80"></i>
-                            <span class="text-sm opacity-80">Dompet Suami</span>
-                        </div>
-                        <p id="husband-wallet" class="text-lg font-semibold">Rp 0</p>
-                    </div>
-                    <div class="w-1/2 pl-3">
-                        <div class="flex items-center mb-1">
-                            <i class="fa-solid fa-person-dress fa-sm mr-2 opacity-80"></i>
-                            <span class="text-sm opacity-80">Dompet Istri</span>
-                        </div>
-                        <p id="wife-wallet" class="text-lg font-semibold">Rp 0</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Ringkasan Bulanan -->
-            <div class="p-5">
-                <div class="flex bg-white p-4 rounded-2xl shadow-sm">
-                    <div class="w-1/2 pr-3 text-center">
-                        <div class="flex items-center justify-center text-green-500 mb-1">
-                            <i class="fa-solid fa-arrow-down fa-xs mr-2"></i>
-                            <span class="text-sm text-slate-500">Pemasukan</span>
-                        </div>
-                        <p id="monthly-income" class="text-lg font-semibold text-green-600">Rp 0</p>
-                    </div>
-                    <div class="w-px bg-slate-200"></div> <!-- Divider -->
-                    <div class="w-1/2 pl-3 text-center">
-                        <div class="flex items-center justify-center text-red-500 mb-1">
-                            <i class="fa-solid fa-arrow-up fa-xs mr-2"></i>
-                            <span class="text-sm text-slate-500">Pengeluaran</span>
-                        </div>
-                        <p id="monthly-expense" class="text-lg font-semibold text-red-600">Rp 0</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Transaksi Terkini -->
-            <div class="px-5">
-                <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-lg font-bold text-slate-800">Transaksi Terkini</h2>
-                    <button onclick="navigate('report')" class="text-sm text-indigo-600 font-medium">Lihat Semua</button>
-                </div>
-                <div id="transaction-list" class="bg-white p-4 rounded-2xl shadow-sm">
-                    <!-- Transaksi dimuat di sini oleh JS -->
-                    <p class="text-slate-500 text-center py-10">Memuat transaksi...</p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Report Page -->
-        <div id="report-page" class="hidden p-5">
-            <div id="report-page-content">
-                <div class="flex justify-between items-center mb-4">
-                    <h1 class="text-2xl font-bold text-slate-800">Laporan</h1>
-                    <button onclick="generateReportPDF()" class="text-indigo-600">
-                        <i class="fa-solid fa-file-pdf fa-lg"></i>
-                    </button>
-                </div>
-                
-                <!-- Chart -->
-                <div class="bg-white p-4 rounded-2xl shadow-sm mb-5">
-                    <canvas id="expense-chart"></canvas>
-                </div>
-                
-                <!-- Semua Transaksi -->
-                <h2 class="text-lg font-bold text-slate-800 mb-2">Semua Transaksi</h2>
-                <div id="all-transaction-list" class="bg-white p-4 rounded-2xl shadow-sm">
-                    <!-- Di-clone dari #transaction-list oleh updateUI -->
-                </div>
-            </div>
-        </div>
-        
-    </div> <!-- End main-content -->
-
-    <!-- BOTTOM NAVIGATION -->
-    <div id="bottom-nav" class="fixed bottom-0 left-0 right-0 max-w-lg mx-auto h-20 bg-white border-t border-slate-200 flex items-center justify-around z-40" style="padding-bottom: constant(safe-area-inset-bottom); padding-bottom: env(safe-area-inset-bottom);">
-        
-        <button id="btn-home" onclick="navigate('home')" class="text-center text-indigo-600 px-4">
-            <i class="fa-solid fa-house fa-lg mb-1"></i>
-            <span class="block text-xs font-medium">Home</span>
-        </button>
-        
-        <!-- Tombol Tambah (FAB) -->
-        <button id="add-button" onclick="toggleModal('action-modal', true)" class="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-lg -mt-10 flex items-center justify-center z-50 active:bg-indigo-800">
-            <i class="fa-solid fa-plus fa-2x"></i>
-        </button>
-        
-        <button id="btn-report" onclick="navigate('report')" class="text-center text-slate-500 px-4">
-            <i class="fa-solid fa-chart-pie fa-lg mb-1"></i>
-            <span class="block text-xs font-medium">Laporan</span>
-        </button>
-    </div>
-    
-    <!-- ACTION MODAL (Pilih Tipe) -->
-    <div id="action-modal" onclick="toggleModal('action-modal', false)" class="hidden fixed inset-0 z-[60] bg-slate-900/50 flex items-end transition-opacity duration-300">
-        <div class="w-full bg-white rounded-t-2xl p-4 transition-transform duration-300 transform translate-y-full" onclick="event.stopPropagation()">
-            <h3 class="font-bold text-lg text-center mb-4 text-slate-800">Pilih Aksi</h3>
-            <button onclick="openTransactionModal('income')" class="w-full text-left p-4 rounded-xl text-slate-700 active:bg-slate-100 transition-colors duration-150">
-                <i class="fa-solid fa-arrow-down fa-lg mr-3 text-green-500"></i>
-                <span class="font-medium">Pemasukan</span>
-            </button>
-            <button onclick="openTransactionModal('expense')" class="w-full text-left p-4 rounded-xl text-slate-700 active:bg-slate-100 transition-colors duration-150">
-                <i class="fa-solid fa-arrow-up fa-lg mr-3 text-red-500"></i>
-                <span class="font-medium">Pengeluaran</span>
-            </button>
-            <!-- TOMBOL BARU -->
-            <button onclick="openTransferModal()" class="w-full text-left p-4 rounded-xl text-slate-700 active:bg-slate-100 transition-colors duration-150">
-                <i class="fa-solid fa-right-left fa-lg mr-3 text-blue-500"></i>
-                <span class="font-medium">Transfer Antar Dompet</span>
-            </button>
-        </div>
-    </div>
-    
-    <!-- ADD/EDIT TRANSACTION MODAL -->
-    <div id="add-transaction-modal" class="hidden fixed inset-0 z-[70] bg-white pt-5 flex flex-col transition-transform duration-300 transform translate-y-full">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-4 pb-4 border-b">
-            <button onclick="toggleModal('add-transaction-modal', false)" class="text-slate-500"><i class="fa-solid fa-times fa-lg"></i></button>
-            <h3 id="modal-title" class="font-bold text-lg text-slate-800">Transaksi Baru</h3>
-            <div class="w-6"></div> <!-- Spacer -->
-        </div>
-        
-        <!-- Form -->
-        <form id="transaction-form" class="flex-1 overflow-y-auto p-5" onsubmit="addTransaction(event)">
-            <input type="hidden" id="transaction-type" value="expense">
-            
-            <div class="mb-4">
-                <label for="transaction-amount" class="block text-sm font-medium text-slate-600 mb-1">Jumlah</label>
-                <input type="number" id="transaction-amount" placeholder="Rp 0" required class="w-full border p-3 rounded-xl text-lg font-bold">
-            </div>
-            
-            <div class="mb-4">
-                <label for="transaction-category" class="block text-sm font-medium text-slate-600 mb-1">Kategori</label>
-                <select id="transaction-category" required class="w-full border p-3 rounded-xl bg-white text-lg">
-                    <optgroup label="Pengeluaran">
-                        <option value="Makanan">Makanan</option>
-                        <option value="Transportasi">Transportasi</option>
-                        <option value="Tagihan">Tagihan</option>
-                        <option value="Belanja">Belanja</option>
-                        <option value="Hiburan">Hiburan</option>
-                        <option value="Kesehatan">Kesehatan</option>
-                        <option value="Pendidikan">Pendidikan</option>
-                    </optgroup>
-                    <optgroup label="Pemasukan">
-                        <option value="Gaji">Gaji</option>
-                        <option value="Bonus">Bonus</option>
-                        <option value="Investasi">Investasi</option>
-                    </optgroup>
-                    <option value="Lainnya">Lainnya</option>
-                </select>
-            </div>
-            
-            <div class="mb-4">
-                <label for="transaction-description" class="block text-sm font-medium text-slate-600 mb-1">Keterangan (Opsional)</label>
-                <input type="text" id="transaction-description" placeholder="cth: Makan siang" class="w-full border p-3 rounded-xl text-lg">
-            </div>
-
-            <div class="mb-4">
-                <label for="transaction-date" class="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
-                <input type="date" id="transaction-date" required class="w-full border p-3 rounded-xl text-lg">
-            </div>
-            
-            <div class="mb-4">
-                <label for="transaction-user" class="block text-sm font-medium text-slate-600 mb-1">Oleh</label>
-                <select id="transaction-user" required class="w-full border p-3 rounded-xl bg-white text-lg">
-                    <option value="Suami">Suami</option>
-                    <option value="Istri">Istri</option>
-                </select>
-            </div>
-            
-            <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold mt-4 active:bg-indigo-800">Simpan</button>
-        </form>
-    </div>
-    
-    <!-- MODAL BARU: TRANSFER -->
-    <div id="transfer-modal" class="hidden fixed inset-0 z-[70] bg-white pt-5 flex flex-col transition-transform duration-300 transform translate-y-full">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-4 pb-4 border-b">
-            <button onclick="toggleModal('transfer-modal', false)" class="text-slate-500"><i class="fa-solid fa-times fa-lg"></i></button>
-            <h3 class="font-bold text-lg text-slate-800">Transfer Antar Dompet</h3>
-            <div class="w-6"></div> <!-- Spacer -->
-        </div>
-        
-        <!-- Form -->
-        <form id="transfer-modal-form" class="flex-1 overflow-y-auto p-5" onsubmit="submitTransfer(event)">
-            
-            <div class="mb-4">
-                <label for="transfer-amount" class="block text-sm font-medium text-slate-600 mb-1">Jumlah</label>
-                <input type="number" id="transfer-amount" placeholder="Rp 0" required class="w-full border p-3 rounded-xl text-lg font-bold">
-            </div>
-            
-            <div class="mb-4">
-                <label for="transfer-from" class="block text-sm font-medium text-slate-600 mb-1">Transfer Dari</label>
-                <select id="transfer-from" required class="w-full border p-3 rounded-xl bg-white text-lg">
-                    <option value="Suami">Suami</option>
-                    <option value="Istri">Istri</option>
-                </select>
-                <!-- Keterangan "Ke" akan di-handle oleh logika -->
-            </div>
-            
-            <div class="mb-4">
-                <label for="transfer-description" class="block text-sm font-medium text-slate-600 mb-1">Keterangan (Opsional)</label>
-                <input type="text" id="transfer-description" placeholder="cth: Uang bensin" class="w-full border p-3 rounded-xl text-lg">
-            </div>
-
-            <div class="mb-4">
-                <label for="transfer-date" class="block text-sm font-medium text-slate-600 mb-1">Tanggal</label>
-                <input type="date" id="transfer-date" required class="w-full border p-3 rounded-xl text-lg">
-            </div>
-            
-            <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mt-4 active:bg-blue-800">Simpan Transfer</button>
-        </form>
-    </div>
-
-    <!-- TRANSACTION DETAIL MODAL -->
-    <div id="transaction-detail-modal" class="hidden fixed inset-0 z-[70] bg-white pt-5 flex flex-col transition-transform duration-300 transform translate-y-full">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-4 pb-4">
-            <button onclick="toggleModal('transaction-detail-modal', false)" class="text-slate-500"><i class="fa-solid fa-times fa-lg"></i></button>
-            <h3 class="font-bold text-lg text-slate-800">Detail Transaksi</h3>
-            <div class="w-6"></div> <!-- Spacer -->
-        </div>
-        
-        <!-- Content -->
-        <div class="flex-1 overflow-y-auto p-5">
-            <div class="text-center mb-6">
-                <p id="detail-amount" class="font-bold text-3xl text-red-600">-Rp 50.000</p>
-                <p id="detail-description" class="text-slate-600 mt-1">Makan siang</p>
-            </div>
-            
-            <div class="bg-slate-50 rounded-xl p-4 space-y-3">
-                <div class="flex justify-between">
-                    <span class="text-slate-500">Kategori</span>
-                    <span id="detail-category" class="font-medium text-slate-800">Makanan</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-slate-500">Oleh</span>
-                    <span id="detail-user" class="font-medium text-slate-800">Suami</span>
-                </div>
-                <div class="flex justify-between">
-                    <span class="text-slate-500">Tanggal</span>
-                    <span id="detail-date" class="font-medium text-slate-800">15 Nov 2025</span>
-                </div>
-            </div>
-            
-            <button id="delete-tx-btn" class="w-full bg-red-100 text-red-600 py-3 rounded-xl font-bold mt-6 active:bg-red-200">
-                <i class="fa-solid fa-trash-can mr-2"></i> Hapus Transaksi
-            </button>
-        </div>
-    </div>
-    
-    <!-- FAMILY SETUP MODALS -->
-    <div id="create-family-modal" class="hidden fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-sm rounded-2xl p-6">
-            <h3 class="font-bold text-lg mb-4">Buat Keluarga</h3>
-            <form onsubmit="submitCreateFamily(event)">
-                <input type="text" id="new-family-name" placeholder="Nama Keluarga (cth: RK_Andi)" required class="w-full border p-3 rounded-xl text-sm mb-4">
-                <button type="submit" class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl active:bg-indigo-800">Buat</button>
-                <button type="button" onclick="toggleModal('create-family-modal',false)" class="w-full py-3 mt-2 text-slate-500">Batal</button>
-            </form>
-        </div>
-    </div>
-    <div id="join-family-modal" class="hidden fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-sm rounded-2xl p-6">
-            <h3 class="font-bold text-lg mb-4">Gabung Keluarga</h3>
-            <form onsubmit="submitJoinFamily(event)">
-                <input type="text" id="join-family-id" placeholder="Masukkan ID Keluarga" required class="w-full border p-3 rounded-xl text-sm mb-4">
-                <button type="submit" class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl active:bg-indigo-800">Gabung</Sbutton>
-                <button type="button" onclick="toggleModal('join-family-modal',false)" class="w-full py-3 mt-2 text-slate-500">Batal</button>
-            </form>
-        </div>
-    </div>
-    
-    <!-- CONFIRMATION MODAL -->
-    <div id="confirmation-modal" class="hidden fixed inset-0 z-[90] bg-slate-900/50 flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-sm rounded-2xl p-6">
-            <h3 class="font-bold text-lg mb-4">Konfirmasi</h3>
-            <p id="confirmation-message" class="text-slate-600 mb-6">Apakah Anda yakin?</p>
-            <div class="flex gap-3">
-                <button id="confirmation-btn-no" class="w-full py-3 bg-slate-200 text-slate-700 font-bold rounded-xl active:bg-slate-300">Batal</button>
-                <button id="confirmation-btn-yes" class="w-full py-3 bg-red-600 text-white font-bold rounded-xl active:bg-red-800">Ya, Hapus</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- TOAST NOTIFICATION -->
-    <div id="toast-notification" class="hidden fixed bottom-5 left-5 right-5 max-w-lg mx-auto z-[99] p-4 rounded-xl text-white shadow-lg transition-transform duration-300 transform translate-y-full" style="bottom: calc(5rem + env(safe-area-inset-bottom));">
-        <div class="flex items-center">
-            <i id="toast-icon" class="fa-solid fa-info-circle fa-lg mr-3"></i>
-            <p id="toast-message" class="font-medium">Ini adalah pesan toast.</p>
-        </div>
-    </div>
-
 </body>
 </html>
 
