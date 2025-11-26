@@ -3,380 +3,628 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Masdar Outlet Plan</title>
+    <title>Order Rumah Kita + Map</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- React Framework -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
-    <!-- Styles -->
+    <!-- LEAFLET MAP CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        body { font-family: 'Outfit', sans-serif; background-color: #FFF8F3; }
+        .glass-nav { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
+        .orange-gradient { background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%); }
         
-        /* Custom Scrollbar for cleaner look */
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+        /* Toast Styles */
+        #toast-container { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; width: 90%; max-width: 350px; pointer-events: none; }
+        .toast-item { background: rgba(0,0,0,0.8); color: white; padding: 12px 20px; border-radius: 50px; font-size: 14px; text-align: center; backdrop-filter: blur(4px); animation: fadeToast 0.3s ease-out forwards; pointer-events: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; gap: 8px; }
+        @keyframes fadeToast { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Animation for Modals */
+        @keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } } 
+        .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes zoom-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .animate-zoom-in { animation: zoom-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        /* Leaflet Fixes */
+        .leaflet-routing-container { display: none !important; } /* Sembunyikan panel instruksi default */
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body class="text-gray-800 pb-28 relative min-h-screen">
 
-    <div id="root"></div>
+    <div id="toast-container"></div>
 
-    <script type="text/babel" data-type="module">
-        // --- IMPORTS ---
-        import { 
-            LayoutDashboard, UtensilsCrossed, Users, Wallet, Save, 
-            TrendingUp, Plus, Trash2, Loader2, ChefHat, Store 
-        } from 'https://esm.sh/lucide-react@0.292.0';
-
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { 
-            getAuth, signInAnonymously, onAuthStateChanged 
-        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import { 
-            getFirestore, doc, setDoc, onSnapshot 
-        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-
-        // --- KONFIGURASI FIREBASE ANDA ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyCryKQyvwUK3i6OjvvJaqe9_IQx_ezIl1Y",
-            authDomain: "masdar-outlet.firebaseapp.com",
-            projectId: "masdar-outlet",
-            storageBucket: "masdar-outlet.firebasestorage.app",
-            messagingSenderId: "392494156553",
-            appId: "1:392494156553:web:88be3033f725c60863e1d8"
-        };
-
-        // Inisialisasi
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        // --- UTILITIES ---
-        const formatIDR = (num) => {
-            if (Math.abs(num) >= 1000000000) return (num / 1000000000).toFixed(1) + ' M';
-            if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(1) + ' Jt';
-            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
-        };
-
-        // --- MAIN APP COMPONENT ---
-        function App() {
-            const [user, setUser] = React.useState(null);
-            const [activeTab, setActiveTab] = React.useState('dash');
-            
-            // Data Default jika pengguna baru
-            const INITIAL_DATA = {
-                profile: { name: 'Masdar Outlet', tagline: 'Rencana Bisnis Baru', address: '', taxRate: 0.1 },
-                menuItems: [
-                    { id: 1, name: 'Menu Contoh 1', price: 20000, cogs: 10000, targetQty: 50 }
-                ],
-                staff: [
-                    { id: 1, role: 'Staff 1', salary: 3000000, count: 1 }
-                ],
-                capex: [
-                    { id: 1, item: 'Modal Awal', cost: 10000000 }
-                ],
-                opex: [
-                    { id: 1, item: 'Biaya Operasional', cost: 500000 }
-                ]
-            };
-
-            const [data, setData] = React.useState(INITIAL_DATA);
-            const [loading, setLoading] = React.useState(true);
-            const [saving, setSaving] = React.useState(false);
-            const [unsaved, setUnsaved] = React.useState(false);
-            const [error, setError] = React.useState(null);
-
-            // 1. AUTHENTICATION (Login Anonim Otomatis)
-            React.useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        await signInAnonymously(auth);
-                    } catch (err) {
-                        console.error("Login Gagal:", err);
-                        setError("Gagal Login ke Firebase. Pastikan 'Anonymous Auth' aktif di Console.");
-                    }
-                };
-                initAuth();
-                return onAuthStateChanged(auth, setUser);
-            }, []);
-
-            // 2. LOAD DATA (Realtime Sync)
-            React.useEffect(() => {
-                if (!user) return;
-                
-                // Path penyimpanan: users/{uid}/business_plan/main
-                const docRef = doc(db, 'users', user.uid, 'business_plan', 'main');
-                
-                const unsub = onSnapshot(docRef, (s) => {
-                    if (s.exists()) {
-                        setData(prev => ({ ...prev, ...s.data() }));
-                    }
-                    setLoading(false);
-                }, (err) => {
-                    console.error("Firestore Error:", err);
-                    setError("Gagal baca data. Pastikan Firestore Rules diizinkan.");
-                    setLoading(false);
-                });
-                
-                return () => unsub();
-            }, [user]);
-
-            // 3. PERHITUNGAN BISNIS
-            const metrics = React.useMemo(() => {
-                const DAYS = 26; // Hari kerja per bulan
-                let dRev = 0, dCOGS = 0;
-                
-                // Hitung Revenue & HPP
-                data.menuItems.forEach(i => {
-                    dRev += (i.price * i.targetQty);
-                    dCOGS += (i.cogs * i.targetQty);
-                });
-                
-                const mRev = dRev * DAYS;
-                const mCOGS = dCOGS * DAYS;
-                const gross = mRev - mCOGS;
-                
-                // Hitung Pengeluaran
-                const staffCost = data.staff.reduce((a, c) => a + (c.salary * c.count), 0);
-                const opexFixed = data.opex.reduce((a, c) => a + c.cost, 0);
-                const expense = staffCost + opexFixed;
-                
-                // Laba Bersih & BEP
-                const ebitda = gross - expense;
-                const tax = ebitda > 0 ? ebitda * data.profile.taxRate : 0;
-                const net = ebitda - tax;
-                
-                const invest = data.capex.reduce((a, c) => a + c.cost, 0);
-                const bep = net > 0 ? invest / net : 0;
-
-                return { mRev, net, invest, bep, mCOGS, expense };
-            }, [data]);
-
-            // 4. HANDLERS
-            const handleSave = async () => {
-                if (!user) return;
-                setSaving(true);
-                try {
-                    const docRef = doc(db, 'users', user.uid, 'business_plan', 'main');
-                    await setDoc(docRef, data);
-                    setUnsaved(false);
-                } catch (e) { 
-                    console.error(e); 
-                    alert("Gagal menyimpan! Cek apakah Firestore Rules sudah diatur ke 'true'?");
-                }
-                setSaving(false);
-            };
-
-            const update = (sec, val) => { setData(p => ({ ...p, [sec]: val })); setUnsaved(true); };
-            const updateArr = (sec, id, f, v) => update(sec, data[sec].map(i => i.id === id ? { ...i, [f]: v } : i));
-            const add = (sec, tpl) => update(sec, [...data[sec], { ...tpl, id: Date.now() }]);
-            const del = (sec, id) => update(sec, data[sec].filter(i => i.id !== id));
-
-            if (loading) return (
-                <div className="h-screen flex flex-col items-center justify-center gap-4 text-slate-400 p-4 text-center">
-                    <Loader2 className="animate-spin w-8 h-8 text-orange-500" /> 
-                    <p>Menghubungkan ke Masdar Outlet...</p>
-                    {error && <p className="text-red-500 text-sm max-w-xs bg-red-50 p-2 rounded">{error}</p>}
+    <nav class="fixed top-0 left-0 right-0 z-40 glass-nav border-b border-white/50 shadow-sm">
+        <div class="max-w-md mx-auto px-5 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-full orange-gradient flex items-center justify-center text-white font-bold shadow-md">R</div>
+                <div>
+                    <h1 class="font-bold text-lg leading-none">Rumah Kita</h1>
+                    <p class="text-[10px] text-orange-500 font-bold tracking-wider uppercase">Outlet & Cafe</p>
                 </div>
-            );
-
-            return (
-                <div className="flex flex-col h-screen font-sans overflow-hidden">
-                    {/* HEADER */}
-                    <header className="bg-white px-4 py-3 shadow-sm flex justify-between items-center sticky top-0 z-20 shrink-0">
-                        <div className="flex items-center gap-2">
-                            <div className="bg-orange-500 p-1.5 rounded-lg">
-                                <ChefHat className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="font-bold text-sm leading-tight">Masdar Plan</h1>
-                                <p className="text-[10px] text-slate-400">{data.profile.name}</p>
-                            </div>
-                        </div>
-                        <button 
-                            onClick={handleSave}
-                            disabled={saving || !unsaved}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                                unsaved ? 'bg-orange-600 text-white shadow-md shadow-orange-200' : 'bg-slate-100 text-slate-400'
-                            }`}
-                        >
-                            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                            {saving ? 'Saving' : 'Simpan'}
-                        </button>
-                    </header>
-
-                    {/* MAIN CONTENT */}
-                    <main className="flex-1 overflow-y-auto pb-24 p-4 bg-slate-100">
-                        
-                        {/* TAB: DASHBOARD */}
-                        {activeTab === 'dash' && (
-                            <div className="space-y-4 animate-fade-in">
-                                <div className="grid grid-cols-2 gap-3">
-                                    <StatCard label="Omzet / Bulan" val={formatIDR(metrics.mRev)} icon={TrendingUp} color="blue" />
-                                    <StatCard label="Laba Bersih" val={formatIDR(metrics.net)} icon={Wallet} color={metrics.net > 0 ? "green" : "red"} />
-                                </div>
-
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h3 className="font-bold text-sm text-slate-700">Kesehatan Bisnis</h3>
-                                        <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${metrics.bep > 0 && metrics.bep < 18 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                            {metrics.bep > 0 && metrics.bep < 18 ? 'Sehat' : 'Cek Ulang'}
-                                        </span>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <HealthRow label="Total Modal Awal" val={formatIDR(metrics.invest)} />
-                                        <HealthRow label="Estimasi Balik Modal (BEP)" val={metrics.bep > 0 ? `${metrics.bep.toFixed(1)} Bulan` : '-'} highlight />
-                                    </div>
-                                </div>
-
-                                <div className="bg-slate-800 text-white p-5 rounded-2xl shadow-lg">
-                                    <h3 className="font-bold text-sm mb-4 opacity-90">Ringkasan Keuangan</h3>
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between"><span>Pendapatan</span><span>{formatIDR(metrics.mRev)}</span></div>
-                                        <div className="flex justify-between text-red-300"><span>HPP Bahan</span><span>({formatIDR(metrics.mCOGS)})</span></div>
-                                        <div className="flex justify-between text-red-300"><span>Operasional</span><span>({formatIDR(metrics.expense)})</span></div>
-                                        <div className="h-px bg-slate-600 my-2"></div>
-                                        <div className="flex justify-between font-bold text-lg text-green-400"><span>Bersih</span><span>{formatIDR(metrics.net)}</span></div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* TAB: MENU */}
-                        {activeTab === 'menu' && (
-                            <MobileList title="Menu & HPP" onAdd={() => add('menuItems', { name: 'Menu Baru', price: 0, cogs: 0, targetQty: 0 })}>
-                                {data.menuItems.map(item => (
-                                    <Card key={item.id} onDelete={() => del('menuItems', item.id)}>
-                                        <InputText val={item.name} onChange={(v) => updateArr('menuItems', item.id, 'name', v)} placeholder="Nama Menu" bold />
-                                        <div className="grid grid-cols-3 gap-2 mt-3">
-                                            <InputNum label="Jual (Rp)" val={item.price} onChange={(v) => updateArr('menuItems', item.id, 'price', v)} />
-                                            <InputNum label="Modal (Rp)" val={item.cogs} onChange={(v) => updateArr('menuItems', item.id, 'cogs', v)} />
-                                            <InputNum label="Jual/Hari" val={item.targetQty} onChange={(v) => updateArr('menuItems', item.id, 'targetQty', v)} />
-                                        </div>
-                                    </Card>
-                                ))}
-                            </MobileList>
-                        )}
-
-                        {/* TAB: SDM */}
-                        {activeTab === 'sdm' && (
-                            <MobileList title="Karyawan & Gaji" onAdd={() => add('staff', { role: 'Posisi Baru', salary: 0, count: 1 })}>
-                                {data.staff.map(item => (
-                                    <Card key={item.id} onDelete={() => del('staff', item.id)}>
-                                        <InputText val={item.role} onChange={(v) => updateArr('staff', item.id, 'role', v)} placeholder="Jabatan" bold />
-                                        <div className="grid grid-cols-2 gap-3 mt-3">
-                                            <InputNum label="Gaji/Orang" val={item.salary} onChange={(v) => updateArr('staff', item.id, 'salary', v)} />
-                                            <InputNum label="Jml Orang" val={item.count} onChange={(v) => updateArr('staff', item.id, 'count', v)} />
-                                        </div>
-                                    </Card>
-                                ))}
-                            </MobileList>
-                        )}
-
-                        {/* TAB: COST */}
-                        {activeTab === 'cost' && (
-                            <div className="space-y-8">
-                                <MobileList title="Modal Awal (Capex)" onAdd={() => add('capex', { item: 'Investasi Baru', cost: 0 })}>
-                                    {data.capex.map(item => (
-                                        <Card key={item.id} onDelete={() => del('capex', item.id)}>
-                                            <InputText val={item.item} onChange={(v) => updateArr('capex', item.id, 'item', v)} placeholder="Nama Barang" bold />
-                                            <div className="mt-2"><InputNum label="Biaya (Rp)" val={item.cost} onChange={(v) => updateArr('capex', item.id, 'cost', v)} /></div>
-                                        </Card>
-                                    ))}
-                                </MobileList>
-                                <MobileList title="Biaya Rutin (Opex)" onAdd={() => add('opex', { item: 'Biaya Rutin', cost: 0 })}>
-                                    {data.opex.map(item => (
-                                        <Card key={item.id} onDelete={() => del('opex', item.id)}>
-                                            <InputText val={item.item} onChange={(v) => updateArr('opex', item.id, 'item', v)} placeholder="Nama Biaya" bold />
-                                            <div className="mt-2"><InputNum label="Biaya per Bulan" val={item.cost} onChange={(v) => updateArr('opex', item.id, 'cost', v)} /></div>
-                                        </Card>
-                                    ))}
-                                </MobileList>
-                            </div>
-                        )}
-
-                        {/* TAB: PROFILE */}
-                        {activeTab === 'profile' && (
-                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4 animate-fade-in">
-                                <h2 className="font-bold text-lg mb-2">Pengaturan Outlet</h2>
-                                <div>
-                                    <label className="text-xs text-slate-500 font-bold uppercase">Nama Outlet</label>
-                                    <input type="text" value={data.profile.name} onChange={(e) => update('profile', {...data.profile, name: e.target.value})} className="w-full py-2 border-b border-slate-200 focus:border-orange-500 outline-none bg-transparent font-medium" />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-slate-500 font-bold uppercase">Pajak / PB1 (%)</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="number" step="0.1" value={data.profile.taxRate * 100} onChange={(e) => update('profile', {...data.profile, taxRate: parseFloat(e.target.value)/100})} className="w-20 py-2 border-b border-slate-200 focus:border-orange-500 outline-none bg-transparent font-mono" />
-                                        <span className="text-sm text-slate-400">%</span>
-                                    </div>
-                                </div>
-                                <div className="pt-4">
-                                    <p className="text-xs text-slate-400">Project ID: masdar-outlet</p>
-                                </div>
-                            </div>
-                        )}
-                    </main>
-
-                    {/* BOTTOM NAVIGATION */}
-                    <nav className="bg-white border-t border-slate-200 fixed bottom-0 w-full pb-safe pt-2 px-2 flex justify-between items-center z-30 text-[10px] font-medium text-slate-400 shrink-0">
-                        <NavBtn id="dash" icon={LayoutDashboard} label="Dash" active={activeTab} set={setActiveTab} />
-                        <NavBtn id="menu" icon={UtensilsCrossed} label="Menu" active={activeTab} set={setActiveTab} />
-                        <NavBtn id="sdm" icon={Users} label="SDM" active={activeTab} set={setActiveTab} />
-                        <NavBtn id="cost" icon={Wallet} label="Biaya" active={activeTab} set={setActiveTab} />
-                        <NavBtn id="profile" icon={Store} label="Profil" active={activeTab} set={setActiveTab} />
-                    </nav>
-                </div>
-            );
-        }
-
-        // --- KOMPONEN KECIL UI ---
-        function NavBtn({ id, icon: Icon, label, active, set }) {
-            const isActive = active === id;
-            return (
-                <button onClick={() => set(id)} className={`flex flex-col items-center gap-1 p-2 w-full transition-colors ${isActive ? 'text-orange-600' : 'hover:text-slate-600'}`}>
-                    <Icon className={`w-6 h-6 ${isActive ? 'fill-orange-100' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
-                    <span>{label}</span>
+            </div>
+            <div class="flex items-center gap-3">
+                 <button onclick="openHistory()" class="w-8 h-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center shadow-sm border border-orange-100">
+                    <i class="fas fa-history text-xs"></i>
                 </button>
-            );
-        }
-        function StatCard({ label, val, icon: Icon, color }) {
-            const colors = { blue: "text-blue-600 bg-blue-50", green: "text-green-600 bg-green-50", red: "text-red-500 bg-red-50" };
-            return (
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colors[color]}`}><Icon className="w-5 h-5" /></div>
-                    <div><p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">{label}</p><p className={`text-sm font-bold truncate ${colors[color].split(' ')[0]}`}>{val}</p></div>
+                <div class="text-right">
+                    <div class="bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> BUKA
+                    </div>
+                    <div id="clock" class="text-[10px] text-slate-500 font-mono mt-0.5" style="letter-spacing: -0.5px;"></div>
                 </div>
-            );
-        }
-        function HealthRow({ label, val, highlight }) {
-            return <div className="flex justify-between items-center text-sm border-b border-slate-50 pb-2 last:border-0 last:pb-0"><span className="text-slate-500">{label}</span><span className={`font-medium ${highlight ? 'text-orange-600' : 'text-slate-800'}`}>{val}</span></div>;
-        }
-        function MobileList({ title, children, onAdd }) {
-            return <div className="space-y-4 animate-fade-in"><div className="flex justify-between items-end px-1"><h2 className="font-bold text-lg text-slate-800">{title}</h2><button onClick={onAdd} className="bg-slate-800 text-white p-2 rounded-lg shadow-lg active:scale-95 transition-transform"><Plus className="w-5 h-5" /></button></div><div className="space-y-3">{children}</div></div>;
-        }
-        function Card({ children, onDelete }) {
-            return <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group">{children}<button onClick={onDelete} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 p-2 -mr-2 -mt-2"><Trash2 className="w-4 h-4" /></button></div>;
-        }
-        function InputText({ val, onChange, placeholder, bold }) {
-            return <input type="text" value={val} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={`w-[85%] bg-transparent outline-none border-b border-transparent focus:border-orange-300 transition-colors pb-1 ${bold ? 'font-bold text-base text-slate-800' : 'text-sm text-slate-600'}`} />;
-        }
-        function InputNum({ label, val, onChange }) {
-            return <div className="bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-100 focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-200 transition-all"><label className="block text-[9px] uppercase font-bold text-slate-400 mb-0.5">{label}</label><input type="number" value={val} onChange={(e) => onChange(parseFloat(e.target.value) || 0)} className="w-full bg-transparent outline-none text-sm font-mono font-medium text-slate-700" /></div>;
+            </div>
+        </div>
+    </nav>
+
+    <div class="pt-20 px-4 max-w-md mx-auto pb-4">
+        <div class="mb-6 orange-gradient rounded-3xl p-6 text-white shadow-xl shadow-orange-200 relative overflow-hidden">
+             <h2 class="text-2xl font-extrabold relative z-10">Mau Makan Apa?</h2>
+             <p class="relative z-10 text-white/90 text-sm">Ongkir otomatis sesuai jarak!</p>
+             <div class="absolute -right-4 -bottom-6 text-8xl opacity-30 rotate-12">🍕</div>
+        </div>
+
+        <div id="menu-grid" class="grid grid-cols-2 gap-4">
+            <div class="col-span-2 flex flex-col items-center py-12 text-slate-400">
+                <i class="fas fa-circle-notch fa-spin text-2xl mb-2"></i>
+                <p class="text-sm">Memuat Menu...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Buttons -->
+    <div class="fixed bottom-6 left-4 right-4 max-w-md mx-auto z-30 flex flex-col gap-3">
+        <a href="https://wa.me/6288228665260?text=Halo%20Admin..." target="_blank" class="self-end bg-emerald-500 text-white px-4 py-2 rounded-full shadow-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-600 transition">
+            <i class="fab fa-whatsapp text-lg"></i> Chat Admin
+        </a>
+
+        <button onclick="openCart()" id="float-cart-btn" class="w-full bg-slate-900 text-white p-4 rounded-2xl shadow-2xl flex justify-between items-center transform translate-y-32 transition-transform duration-500">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center font-bold text-sm shadow-lg" id="cart-count">0</div>
+                <div class="text-left"><p class="text-xs text-slate-400">Total</p><p class="font-bold text-sm" id="cart-total-display">Rp 0</p></div>
+            </div>
+            <div class="flex items-center gap-2 text-sm font-bold text-orange-400">Check Out <i class="fas fa-arrow-right"></i></div>
+        </button>
+    </div>
+
+    <!-- MAP SELECTION MODAL (BARU) -->
+    <div id="map-modal" class="fixed inset-0 bg-white z-[70] hidden flex-col">
+        <div class="p-4 shadow-md flex justify-between items-center bg-white z-10">
+            <div>
+                <h3 class="font-bold text-lg text-slate-800">Tentukan Lokasi</h3>
+                <p class="text-xs text-slate-500">Geser pin merah ke lokasi Anda</p>
+            </div>
+            <button onclick="closeMapModal()" class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><i class="fas fa-times text-slate-500"></i></button>
+        </div>
+        
+        <!-- Wadah Peta -->
+        <div id="map" class="flex-1 bg-slate-100 w-full h-full"></div>
+
+        <div class="p-5 bg-white shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-10 rounded-t-3xl">
+             <div class="flex justify-between items-center mb-4 bg-orange-50 p-3 rounded-xl border border-orange-100">
+                <div>
+                    <p class="text-[10px] text-orange-600 font-bold uppercase tracking-wide">Ongkir Estimasi</p>
+                    <h4 class="font-extrabold text-xl text-slate-800" id="map-price-preview">Rp 0</h4>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm font-bold text-slate-700" id="map-dist-preview">0 km</p>
+                    <p class="text-xs text-slate-400" id="map-time-preview">0 min</p>
+                </div>
+             </div>
+             
+             <!-- Tombol GPS -->
+             <button onclick="getRealLocation()" class="w-full mb-3 bg-white border border-slate-200 text-slate-600 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50">
+                <i class="fas fa-crosshairs text-orange-500"></i> Gunakan Lokasi Saya Saat Ini
+             </button>
+
+             <button onclick="confirmLocation()" id="btn-confirm-loc" class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">Pilih Lokasi Ini</button>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-end justify-center">
+        <div class="bg-white w-full max-w-md h-[80vh] rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 class="font-bold text-xl text-slate-800">Riwayat Pesanan</h2>
+                <button onclick="closeHistory()" class="w-8 h-8 rounded-full bg-white shadow flex items-center justify-center"><i class="fas fa-times text-slate-400"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-4" id="history-list">
+                <div class="text-center text-slate-400 py-10 text-sm">Belum ada riwayat pesanan.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cart Modal -->
+    <div id="cart-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-end justify-center">
+        <div class="bg-white w-full max-w-md h-[90vh] rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h2 class="font-bold text-xl text-slate-800">Keranjang</h2>
+                <button onclick="closeCart()" class="w-8 h-8 rounded-full bg-white shadow flex items-center justify-center"><i class="fas fa-times text-slate-400"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-4" id="cart-items"></div>
+            
+            <div class="p-6 border-t border-slate-100 bg-white">
+                <form id="order-form" class="space-y-4">
+                    <div class="grid grid-cols-1 gap-3">
+                        <input type="text" id="c-name" required placeholder="Nama Lengkap" class="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-orange-400 outline-none text-sm font-medium">
+                        <input type="tel" id="c-phone" required placeholder="Nomor WhatsApp (08...)" pattern="^08[0-9]{8,}$" title="Format harus 08xxxxxxxx" class="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-orange-400 outline-none text-sm font-medium">
+                        
+                        <!-- ALAMAT MANUAL (Tetap ada sebagai detail patokan) -->
+                        <textarea id="c-address" required placeholder="Detail Alamat (Contoh: Rumah Pagar Hitam, Sebelah Warung)" rows="2" class="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-orange-400 outline-none text-sm font-medium"></textarea>
+                    
+                        <!-- INPUT MAP (PENGGANTI ZONA) -->
+                        <div class="bg-orange-50 p-3 rounded-xl border border-orange-200">
+                            <label class="text-[10px] font-bold text-orange-600 uppercase mb-2 block tracking-wide">Titik Pengantaran & Ongkir</label>
+                            
+                            <button type="button" onclick="openMapModal()" class="w-full bg-white text-slate-700 px-4 py-3 rounded-lg text-sm font-bold border border-orange-200 hover:bg-orange-100 transition flex items-center justify-between shadow-sm">
+                                <span id="location-status-text" class="truncate">📍 Klik untuk Pilih Lokasi di Peta</span>
+                                <i class="fas fa-chevron-right text-xs text-orange-400"></i>
+                            </button>
+
+                            <!-- Hidden Inputs untuk Data Peta -->
+                            <input type="hidden" id="input-lat">
+                            <input type="hidden" id="input-lng">
+                            <input type="hidden" id="input-dist" value="0">
+                            <input type="hidden" id="input-fee" value="0">
+                            
+                            <p id="route-result-info" class="text-[10px] text-slate-500 mt-2 text-right hidden">Jarak: <span id="lbl-dist">0</span> km | Ongkir: <span id="lbl-fee" class="font-bold text-orange-600">Rp 0</span></p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-3">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Metode Pembayaran</label>
+                            <select id="c-payment" class="w-full px-3 py-3 rounded-lg bg-slate-50 border border-slate-200 text-sm outline-none focus:border-orange-400 font-medium">
+                                <option value="COD">Bayar di Tempat (COD)</option>
+                                <option value="QRIS">QRIS (Scan Barcode)</option>
+                                <option value="DANA">DANA</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-900 p-4 rounded-xl flex justify-between items-center shadow-lg text-white">
+                         <div class="text-xs text-slate-400"><p>Subtotal: <span id="sum-sub" class="text-white">0</span></p><p>Ongkir: <span id="sum-fee" class="text-orange-400 font-bold">0</span></p></div>
+                         <div class="text-xl font-extrabold" id="sum-total">Rp 0</div>
+                    </div>
+                    <button type="submit" id="btn-submit" disabled class="w-full bg-orange-500 text-white py-4 rounded-xl font-bold shadow-xl shadow-orange-200 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed">Pesan & Konfirmasi WA</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment QR Modal -->
+    <div id="payment-qr-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] hidden items-center justify-center p-6">
+        <div class="bg-white w-full max-w-xs rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-zoom-in p-6 text-center">
+            <h2 id="payment-qr-title" class="font-bold text-xl text-slate-800 mb-3">Pembayaran</h2>
+            <p class="text-sm text-slate-500 mb-4">Silakan scan kode di bawah ini.</p>
+            <div class="w-full aspect-square bg-slate-100 rounded-xl mb-4 overflow-hidden">
+                <img id="payment-qr-image" src="" alt="Kode Pembayaran" class="w-full h-full object-contain">
+            </div>
+            <button id="payment-qr-continue" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold shadow-xl active:scale-95 transition mb-2">Sudah Bayar & Lanjutkan</button>
+            <button id="payment-qr-cancel" class="w-full text-slate-500 text-sm font-medium py-2">Batal</button>
+        </div>
+    </div>
+
+    <!-- Success Overlay -->
+    <div id="success-overlay" class="fixed inset-0 bg-white z-[60] hidden flex-col items-center justify-center text-center p-8">
+        <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-green-500 text-3xl mb-4 animate-bounce"><i class="fas fa-check"></i></div>
+        <h2 class="text-2xl font-bold mb-2">Pesanan Terkirim!</h2>
+        <p class="text-sm text-slate-500 mb-4">Silakan konfirmasi ke Admin agar segera diproses.</p>
+        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6"><p class="text-xs text-slate-400 uppercase mb-1">Kode Antrian</p><h1 class="text-4xl font-mono font-bold text-slate-800" id="final-code">Q-???</h1></div>
+        <a id="wa-confirm-btn" href="#" target="_blank" class="bg-emerald-500 text-white px-8 py-3 rounded-full font-bold shadow-lg hover:bg-emerald-600 transition mb-3 w-full block">
+            <i class="fab fa-whatsapp"></i> Hubungi Admin
+        </a>
+        <button onclick="location.reload()" class="text-slate-400 text-sm font-bold hover:text-slate-600">Tutup</button>
+    </div>
+
+    <!-- LEAFLET SCRIPTS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp, getDocs, query, where, documentId } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- KONFIGURASI GAMBAR & TOKO ---
+        const QRIS_IMAGE_URL = "https://placehold.co/400x400/FFFFFF/000000?text=QRIS+Rumah+Kita";
+        const DANA_IMAGE_URL = "https://placehold.co/400x400/FFFFFF/000000?text=0882-2866-5260";
+        
+        // --- SETTING LOKASI TOKO & HARGA ---
+        // GANTI KOORDINAT INI DENGAN LOKASI ASLI "RUMAH KITA"
+        const STORE_LOCATION = [-6.175392, 106.827153]; // Contoh: Monas. Ganti dengan lat,lng toko anda.
+        
+        const PRICE_PER_KM = 2000; // Harga per KM
+        const MIN_DELIVERY_FEE = 3000; // Ongkir Minimal
+
+        // --- VARIABEL MAP ---
+        let map, userMarker, routingControl, storeMarker;
+        let tempDistance = 0, tempFee = 0;
+        let mapInitialized = false;
+
+        function showToast(msg, icon='info') {
+            const box = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            const iconHtml = icon === 'success' ? '<i class="fas fa-check-circle text-green-400"></i>' : '<i class="fas fa-info-circle text-blue-400"></i>';
+            el.className = 'toast-item';
+            el.innerHTML = `${iconHtml} <span>${msg}</span>`;
+            box.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
         }
 
-        // RENDER APLIKASI
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        function generateQueueCode() {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const random = Math.floor(1000 + Math.random() * 9000); 
+            return `Q-${day}${month}-${random}`;
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+            const clockEl = document.getElementById('clock');
+            if (clockEl) {
+                clockEl.textContent = `${days[now.getDay()]}, ${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            }
+        }
+        setInterval(updateClock, 1000); updateClock();
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCVl_0OhaCKRiJ5-qPKwaoMs3q11tHRbys",
+            authDomain: "outlet-rumah-kita.firebaseapp.com",
+            projectId: "outlet-rumah-kita",
+            storageBucket: "outlet-rumah-kita.firebasestorage.app",
+            messagingSenderId: "1081923667869",
+            appId: "1:1081923667869:web:797fce3cc6de79d2c69174"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const COL_MENU = 'cafe_menu';
+        const COL_ORDERS = 'cafe_orders';
+        const ADMIN_WA = "6288228665260";
+
+        let cart = [], menu = [];
+
+        signInAnonymously(auth).then(() => {
+            showToast("Terhubung!", 'success');
+            onSnapshot(collection(db, COL_MENU), snap => {
+                menu = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                renderMenu();
+            });
+        }).catch(e => showToast("Gagal Konek Database"));
+
+        function renderMenu() {
+            const grid = document.getElementById('menu-grid');
+            if(menu.length === 0) { grid.innerHTML = '<div class="col-span-2 text-center py-10 text-slate-400">Menu belum tersedia.</div>'; return; }
+            grid.innerHTML = menu.map(item => `
+                <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full group">
+                    <div class="bg-orange-50 h-32 rounded-xl mb-3 overflow-hidden relative">
+                        <img src="${item.imageUrl || `https://placehold.co/300x300/fff7ed/fdba74?text=${item.name.charAt(0)}`}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/300x300?text=Img'">
+                    </div>
+                    <h3 class="font-bold text-slate-800 mb-1 line-clamp-2">${item.name}</h3>
+                    <div class="mt-auto flex justify-between items-center">
+                        <span class="font-bold text-orange-600">Rp ${parseInt(item.price).toLocaleString()}</span>
+                        <button onclick="window.addToCart('${item.id}')" class="w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center shadow active:scale-90 transition"><i class="fas fa-plus text-xs"></i></button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.addToCart = (id) => {
+            const item = menu.find(m => m.id === id); const exist = cart.find(c => c.id === id);
+            if(exist) exist.qty++; else cart.push({...item, qty: 1});
+            updateCartUI(); showToast("Masuk keranjang", 'success');
+            const btn = document.getElementById('float-cart-btn');
+            btn.classList.add('scale-105', 'bg-orange-600'); setTimeout(() => btn.classList.remove('scale-105', 'bg-orange-600'), 200);
+        }
+
+        window.updateQty = (id, delta) => { const idx = cart.findIndex(c => c.id === id); if(idx > -1) { cart[idx].qty += delta; if(cart[idx].qty <= 0) cart.splice(idx, 1); renderCartItems(); updateCartUI(); } }
+        
+        function updateCartUI() {
+            const cnt = cart.reduce((a,b) => a+b.qty, 0); const tot = cart.reduce((a,b) => a+(b.price*b.qty), 0);
+            document.getElementById('cart-count').textContent = cnt; document.getElementById('cart-total-display').textContent = 'Rp ' + tot.toLocaleString();
+            const btn = document.getElementById('float-cart-btn'); btn.classList.toggle('translate-y-32', cnt === 0); calcTotal();
+        }
+        
+        function renderCartItems() {
+            const el = document.getElementById('cart-items'); if(cart.length===0) { el.innerHTML='<div class="text-center text-slate-400 py-4">Kosong.</div>'; return; }
+            el.innerHTML = cart.map(item => `<div class="flex items-center gap-3 bg-white border border-slate-100 p-2 rounded-xl"><div class="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden shrink-0"><img src="${item.imageUrl || `https://placehold.co/100x100/fff7ed/fdba74?text=${item.name.charAt(0)}`}" class="w-full h-full object-cover"></div><div class="flex-1"><h4 class="font-bold text-sm truncate">${item.name}</h4><p class="text-xs text-slate-500">Rp ${item.price.toLocaleString()}</p></div><div class="flex items-center gap-2 bg-slate-50 rounded-full px-2 py-1"><button onclick="updateQty('${item.id}', -1)" class="w-5 h-5 bg-white shadow rounded-full text-xs">-</button><span class="text-sm font-bold w-3 text-center">${item.qty}</span><button onclick="updateQty('${item.id}', 1)" class="w-5 h-5 bg-slate-800 text-white shadow rounded-full text-xs">+</button></div></div>`).join('');
+        }
+
+        // --- (DIPERBARUI) FUNGSI TOTAL DENGAN ONGKIR DINAMIS ---
+        function calcTotal() {
+            const sub = cart.reduce((a,b) => a+(b.price*b.qty), 0); 
+            // Ambil fee dari hidden input (hasil kalkulasi map)
+            const fee = parseInt(document.getElementById('input-fee').value) || 0;
+            const dist = parseFloat(document.getElementById('input-dist').value) || 0;
+            
+            document.getElementById('sum-sub').textContent = sub.toLocaleString(); 
+            document.getElementById('sum-fee').textContent = fee.toLocaleString(); 
+            document.getElementById('sum-total').textContent = 'Rp ' + (sub+fee).toLocaleString();
+            
+            // Tombol disable jika cart kosong ATAU jarak belum dipilih (fee 0 dan dist 0)
+            const btn = document.getElementById('btn-submit'); 
+            if(cart.length === 0 || dist === 0) { 
+                btn.disabled=true; 
+            } else { 
+                btn.disabled=false; 
+            }
+        }
+
+
+        // --- MAP FUNCTIONS ---
+        window.openMapModal = () => {
+            const modal = document.getElementById('map-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            if(!mapInitialized) {
+                initMap();
+                mapInitialized = true;
+            } else {
+                setTimeout(() => map.invalidateSize(), 300);
+            }
+        }
+
+        window.closeMapModal = () => {
+            const modal = document.getElementById('map-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        window.initMap = () => {
+            // Peta Start di Lokasi Toko
+            map = L.map('map', {zoomControl:false}).setView(STORE_LOCATION, 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            // Icon Toko
+            const storeIcon = L.icon({
+                iconUrl: 'https://cdn-icons-png.flaticon.com/512/7541/7541900.png', // Icon Toko
+                iconSize: [32, 32], iconAnchor: [16, 32]
+            });
+            L.marker(STORE_LOCATION, {icon: storeIcon}).addTo(map).bindPopup("<b>Outlet Rumah Kita</b>").openPopup();
+
+            // Icon User (Draggable) - Start agak geser dikit dari toko
+            const userIcon = L.icon({
+                iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png', // Pin Merah
+                iconSize: [36, 36], iconAnchor: [18, 36]
+            });
+            
+            // Default user marker
+            const defaultUserPos = [STORE_LOCATION[0] + 0.005, STORE_LOCATION[1] + 0.005];
+            userMarker = L.marker(defaultUserPos, {draggable: true, icon: userIcon}).addTo(map);
+
+            // Event saat marker digeser
+            userMarker.on('dragend', function(e) {
+                calculateRoute(e.target.getLatLng());
+            });
+
+            // Event saat peta diklik
+            map.on('click', function(e) {
+                userMarker.setLatLng(e.latlng);
+                calculateRoute(e.latlng);
+            });
+
+            // Hitung awal
+            calculateRoute(L.latLng(defaultUserPos));
+        }
+
+        window.getRealLocation = () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const newPos = L.latLng(lat, lng);
+                    
+                    userMarker.setLatLng(newPos);
+                    map.setView(newPos, 16);
+                    calculateRoute(newPos);
+                    showToast("Lokasi ditemukan");
+                }, () => showToast("Gagal mendeteksi GPS"));
+            } else {
+                showToast("GPS tidak didukung");
+            }
+        }
+
+        function calculateRoute(destLatLng) {
+            document.getElementById('btn-confirm-loc').innerText = "Menghitung...";
+            document.getElementById('btn-confirm-loc').disabled = true;
+
+            if (routingControl) map.removeControl(routingControl);
+
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(STORE_LOCATION[0], STORE_LOCATION[1]), // Titik Awal (Toko)
+                    destLatLng // Titik Tujuan (User)
+                ],
+                router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
+                lineOptions: { styles: [{color: '#00AA13', opacity: 0.8, weight: 6}] },
+                addWaypoints: false,
+                draggableWaypoints: false,
+                fitSelectedRoutes: false, // Jangan auto zoom biar user ga pusing
+                show: false
+            }).on('routesfound', function(e) {
+                const routes = e.routes;
+                const summary = routes[0].summary;
+
+                // Hitung Data
+                const distKm = (summary.totalDistance / 1000).toFixed(1);
+                const timeMins = Math.round(summary.totalTime / 60);
+                
+                // LOGIKA HARGA
+                // Max(Minimal Rp 3000, Jarak * 2000)
+                let calculatedPrice = Math.max(MIN_DELIVERY_FEE, Math.round(distKm * PRICE_PER_KM));
+
+                // Simpan ke Variabel Temp
+                tempDistance = distKm;
+                tempFee = calculatedPrice;
+
+                // Update UI Modal Map
+                document.getElementById('map-dist-preview').innerText = distKm + " km";
+                document.getElementById('map-time-preview').innerText = timeMins + " min";
+                document.getElementById('map-price-preview').innerText = "Rp " + calculatedPrice.toLocaleString();
+
+                document.getElementById('btn-confirm-loc').innerText = "Pilih Lokasi Ini";
+                document.getElementById('btn-confirm-loc').disabled = false;
+
+            }).addTo(map);
+        }
+
+        window.confirmLocation = () => {
+            // Pindahkan data dari Map ke Form Checkout
+            document.getElementById('input-dist').value = tempDistance;
+            document.getElementById('input-fee').value = tempFee;
+            document.getElementById('input-lat').value = userMarker.getLatLng().lat;
+            document.getElementById('input-lng').value = userMarker.getLatLng().lng;
+
+            // Update Tampilan Checkout
+            document.getElementById('location-status-text').innerText = `✅ Lokasi Terpilih (${tempDistance} km)`;
+            document.getElementById('location-status-text').classList.add('text-green-600');
+            
+            document.getElementById('lbl-dist').innerText = tempDistance;
+            document.getElementById('lbl-fee').innerText = "Rp " + tempFee.toLocaleString();
+            document.getElementById('route-result-info').classList.remove('hidden');
+
+            // Hitung ulang total keranjang
+            calcTotal();
+            closeMapModal();
+        }
+
+        // --- SUBMIT ORDER ---
+        document.getElementById('order-form').addEventListener('submit', async (e) => {
+            e.preventDefault(); 
+            if(cart.length === 0) return;
+            
+            const phone = document.getElementById('c-phone').value.trim();
+            if (!phone.startsWith('08')) { showToast('Nomor WA harus diawali 08...', 'info'); return; }
+
+            const paymentMethod = document.getElementById('c-payment').value;
+            const btn = document.getElementById('btn-submit'); 
+            btn.innerText = "Memvalidasi..."; btn.disabled = true;
+
+            if (paymentMethod === 'QRIS' || paymentMethod === 'DANA') {
+                openPaymentModal(paymentMethod);
+            } else {
+                await processOrder();
+            }
+        });
+
+        window.openPaymentModal = (method) => {
+            const titleEl = document.getElementById('payment-qr-title');
+            const imgEl = document.getElementById('payment-qr-image');
+            const modal = document.getElementById('payment-qr-modal');
+
+            if (method === 'QRIS') {
+                titleEl.textContent = 'Pembayaran QRIS';
+                imgEl.src = QRIS_IMAGE_URL;
+            } else { // DANA
+                titleEl.textContent = 'Pembayaran DANA';
+                imgEl.src = DANA_IMAGE_URL;
+            }
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+        }
+
+        window.processOrder = async () => {
+            const btn = document.getElementById('btn-submit');
+            btn.innerText = "Mengirim..."; btn.disabled = true;
+            document.getElementById('payment-qr-modal').classList.add('hidden');
+            document.getElementById('payment-qr-modal').classList.remove('flex');
+            
+            // Ambil data ongkir dari input hidden
+            const fee = parseInt(document.getElementById('input-fee').value);
+            const dist = document.getElementById('input-dist').value;
+            const lat = document.getElementById('input-lat').value;
+            const lng = document.getElementById('input-lng').value;
+
+            const sub = cart.reduce((a,b) => a+(b.price*b.qty), 0);
+            const qc = generateQueueCode();
+            const customerName = document.getElementById('c-name').value;
+            const phone = document.getElementById('c-phone').value.trim();
+            const addressDetail = document.getElementById('c-address').value;
+            
+            try {
+                const docRef = await addDoc(collection(db, COL_ORDERS), {
+                    customerName: customerName, 
+                    customerPhone: phone,
+                    address: addressDetail,
+                    location: { lat: lat, lng: lng, distance: dist }, // Simpan koordinat & jarak
+                    items: cart, 
+                    subtotal: sub, 
+                    deliveryFee: fee, 
+                    total: sub+fee, 
+                    paymentMethod: document.getElementById('c-payment').value,
+                    source: 'online', 
+                    status: 'pending', 
+                    timestamp: serverTimestamp(), 
+                    queueCode: qc
+                });
+
+                saveOrderHistory(docRef.id);
+
+                document.getElementById('cart-modal').classList.add('hidden'); 
+                document.getElementById('cart-modal').classList.remove('flex');
+                document.getElementById('success-overlay').classList.remove('hidden'); 
+                document.getElementById('success-overlay').classList.add('flex');
+                document.getElementById('final-code').textContent = qc; 
+                
+                const waMsg = `Halo Admin, pesanan baru via Web.\n\nKode: *${qc}*\nNama: ${customerName}\nJarak: ${dist} km\nTotal: Rp ${(sub+fee).toLocaleString()}\nLokasi Peta: https://www.google.com/maps?q=${lat},${lng}`;
+                document.getElementById('wa-confirm-btn').href = `https://wa.me/${ADMIN_WA}?text=${encodeURIComponent(waMsg)}`;
+                
+                confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#ff7e5f', '#feb47b'] });
+                cart=[]; updateCartUI();
+            } catch(err) { 
+                console.error(err); 
+                showToast("Gagal kirim: "+err.code); 
+                btn.innerText="Pesan & Konfirmasi WA"; btn.disabled=false; 
+            }
+        }
+
+        document.getElementById('payment-qr-continue').addEventListener('click', processOrder);
+        document.getElementById('payment-qr-cancel').addEventListener('click', () => {
+            document.getElementById('payment-qr-modal').classList.add('hidden');
+            document.getElementById('payment-qr-modal').classList.remove('flex');
+            document.getElementById('btn-submit').innerText="Pesan & Konfirmasi WA"; 
+            document.getElementById('btn-submit').disabled=false;
+        });
+
+        // Functions History (Sama)
+        function saveOrderHistory(id) { let h = JSON.parse(localStorage.getItem('ork_history') || '[]'); h.push(id); if(h.length > 10) h.shift(); localStorage.setItem('ork_history', JSON.stringify(h)); }
+        window.openHistory = async () => { /* (Sama seperti file sebelumnya) */ 
+             const modal = document.getElementById('history-modal');
+            const list = document.getElementById('history-list');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            list.innerHTML = '<div class="text-center py-10"><i class="fas fa-circle-notch fa-spin text-slate-400"></i></div>';
+
+            const h = JSON.parse(localStorage.getItem('ork_history') || '[]');
+            if(h.length === 0) { list.innerHTML = '<div class="text-center text-slate-400 py-10 text-sm">Belum ada riwayat pesanan.</div>'; return; }
+
+            try {
+                const q = query(collection(db, COL_ORDERS), where(documentId(), 'in', h));
+                const snap = await getDocs(q);
+                const orders = snap.docs.map(d => d.data()).sort((a,b) => b.timestamp?.seconds - a.timestamp?.seconds);
+
+                list.innerHTML = orders.map(o => {
+                    let stClass = 'bg-slate-100 text-slate-500'; let stText = 'Pending';
+                    if(o.status === 'confirmed') { stClass = 'bg-emerald-100 text-emerald-600'; stText = 'Dikonfirmasi'; }
+                    if(o.status === 'completed') { stClass = 'bg-blue-100 text-blue-600'; stText = 'Selesai'; }
+
+                    return `<div class="bg-white border border-slate-100 p-4 rounded-xl shadow-sm mb-3">
+                            <div class="flex justify-between items-start mb-2"><div><span class="font-bold text-lg text-slate-800">${o.queueCode}</span><p class="text-xs text-slate-400">${new Date(o.timestamp?.seconds*1000).toLocaleString('id-ID')}</p></div><span class="px-2 py-1 rounded text-[10px] font-bold uppercase ${stClass}">${stText}</span></div>
+                            <div class="text-sm text-slate-600 mb-2">${o.items.map(i => `${i.qty}x ${i.name}`).join(', ')}</div>
+                            <div class="flex justify-between items-center pt-2 border-t border-slate-50"><span class="font-bold text-orange-600">Rp ${parseInt(o.total).toLocaleString()}</span></div></div>`;
+                }).join('');
+            } catch(e) { console.error(e); list.innerHTML = 'Error loading history.'; }
+        }
+        window.closeHistory = () => { document.getElementById('history-modal').classList.add('hidden'); document.getElementById('history-modal').classList.remove('flex'); }
+        window.openCart = () => { renderCartItems(); document.getElementById('cart-modal').classList.remove('hidden'); document.getElementById('cart-modal').classList.add('flex'); calcTotal(); }
+        window.closeCart = () => { document.getElementById('cart-modal').classList.add('hidden'); document.getElementById('cart-modal').classList.remove('flex'); }
     </script>
 </body>
 </html>
